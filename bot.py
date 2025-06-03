@@ -82,11 +82,22 @@ async def start_command(client, message):
                 return
 
             # Handle file flow
+            if not command_arg.isdigit():
+                reply = await message.reply_text("Invalid File ID.")
+                await auto_delete_message(message, reply)
+                return
+            
             file_id = int(command_arg)
             if not await check_access(message, user_id):
                 return
 
-            file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
+
+            try:
+                file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
+            except Exception:
+                await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
+                return
+            
             media = file_message.video or file_message.audio or file_message.document
             if media:
                 copy_message = await file_message.copy(chat_id=message.chat.id)
