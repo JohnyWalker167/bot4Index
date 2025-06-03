@@ -88,7 +88,9 @@ async def start_command(client, message):
                 return
             
             file_id = int(command_arg)
-
+            if not await check_access(message, user_id):
+                return
+            
             try:
                 file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
             except Exception:
