@@ -70,22 +70,25 @@ async def handle_start(client, message):
                 await bot.send_message(LOG_CHANNEL_ID, f"User🕵️‍♂️{user_link} with 🆔 {user_id} @{bot_username} {token_msg}", parse_mode=enums.ParseMode.HTML)
                 await auto_delete_message(message, reply)
                 return
-
-            # Handle file flow
-            file_id = int(command_arg)
-            if not await check_access(message, user_id):
-                return
-
-            file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
-            media = file_message.video or file_message.audio or file_message.document
-            if media:
-                copy_message = await file_message.copy(chat_id=message.chat.id)
-                user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
-                await auto_delete_message(message, copy_message)
-                await asyncio.sleep(3)
             else:
-                await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
-            return
+                # Handle file flow
+                file_id = int(command_arg)
+
+                if not await check_access(message, user_id):
+                    return
+
+                file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
+
+                media = file_message.video or file_message.audio or file_message.document
+
+                if media:
+                    copy_message = await file_message.copy(chat_id=message.chat.id)
+                    user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
+                    await auto_delete_message(message, copy_message)
+                    await asyncio.sleep(3)
+                else:
+                    await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
+                return
 
         # Default flow (no arguments)
         await mongo_collection.update_one({'user_id': user_id}, {'$set': {'user_id': user_id}}, upsert=True)
@@ -409,10 +412,8 @@ async def update_token(user_id):
         current_time = tm()
         user_data[user_id] = {"token": token, "time": current_time, "status": "unverified", "file_count": 0}
         urlshortx = await shorten_url(f'https://telegram.me/{bot_username}?start=token_{token}')
-        token_url = f'https://telegram.dog/{bot_username}?start=token'
         button1 = InlineKeyboardButton("Get verified ✅", url=urlshortx)
-        button2 = InlineKeyboardButton("How to get verified ✅", url=token_url)
-        button = InlineKeyboardMarkup([[button1], [button2]]) 
+        button = InlineKeyboardMarkup([button1]) 
         return button
     except Exception as e:
         logger.error(f"error in update_token: {e}")
@@ -423,10 +424,8 @@ async def genrate_token(user_id):
         current_time = tm()
         user_data[user_id] = {"token": token, "time": current_time, "status": "unverified", "file_count": 0}
         urlshortx = await shorten_url(f'https://telegram.me/{bot_username}?start=token_{token}')
-        token_url = f'https://telegram.dog/{bot_username}?start=token'
         button1 = InlineKeyboardButton("Get verified ✅", url=urlshortx)
-        button2 = InlineKeyboardButton("How to get verified ✅", url=token_url)
-        button = InlineKeyboardMarkup([[button1], [button2]]) 
+        button = InlineKeyboardMarkup([button1]) 
         return button
     except Exception as e:
         logger.error(f"error in genrate_token: {e}")
