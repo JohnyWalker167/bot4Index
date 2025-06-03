@@ -56,6 +56,8 @@ OWNER_ID = int(os.getenv('OWNER_ID'))
 DB_CHANNEL_ID = int(os.getenv('DB_CHANNEL_ID'))
 LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID'))
 WEBSITE = os.getenv('WEBSITE')
+#MY DOMAIN
+MY_DOMAIN = os.getenv('MY_DOMAIN')
 POSTER_URL = os.getenv('POSTER_URL')
 
 #MONGO URI
