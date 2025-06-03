@@ -55,68 +55,61 @@ bot = Client(
 # *---------------------------------------------- HANDLER'S ----------------------------------------------------*
 
 @bot.on_message(filters.private & filters.command("start"))
-async def handle_start(client, message):
-    user_id = message.from_user.id
-    user_link = await get_user_link(message.from_user)
-
+async def start_command(client, message):
     try:
-        # If there are extra arguments with /start
-        if len(message.command) > 1:
-            command_arg = message.command[1].strip()
+        user_id = message.from_user.id
+        user_link = await get_user_link(message.from_user)
 
+        if len(message.command) > 1:
+            command_arg = message.command[1]
+            
             # Handle token flow
             if command_arg == "token":
-                msg = await bot.get_messages(LOG_CHANNEL_ID, 1415)
+                msg = await bot.get_messages(LOG_CHANNEL_ID, TUT_ID)
                 sent_msg = await msg.copy(chat_id=message.chat.id)
                 await message.delete()
                 await asyncio.sleep(300)
                 await sent_msg.delete()
                 return
 
-            # Token verification flow
+            # Handle token verification
             if command_arg.startswith("token_"):
                 input_token = command_arg[6:]
                 token_msg = await verify_token(user_id, input_token)
                 reply = await message.reply_text(token_msg)
-                await bot.send_message(
-                    LOG_CHANNEL_ID,
-                    f"User🕵️‍♂️{user_link} with 🆔 {user_id} @{bot_username} {token_msg}",
-                    parse_mode=enums.ParseMode.HTML
-                )
+                await bot.send_message(LOG_CHANNEL_ID, f"User🕵️‍♂️{user_link} with 🆔 {user_id} @{bot_username} {token_msg}", parse_mode=enums.ParseMode.HTML)
                 await auto_delete_message(message, reply)
                 return
 
-            # File retrieval flow
-            if not command_arg.isdigit():
-                reply = await message.reply_text("Invalid File ID.")
-                await auto_delete_message(message, reply)
-                return
-
+            # Handle file flow
             file_id = int(command_arg)
             if not await check_access(message, user_id):
                 return
 
             file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
             media = file_message.video or file_message.audio or file_message.document
-
             if media:
                 copy_message = await file_message.copy(chat_id=message.chat.id)
                 user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
                 await auto_delete_message(message, copy_message)
                 await asyncio.sleep(3)
-                return
             else:
                 await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
-                return
+            return
 
         # Default flow (no arguments)
         await mongo_collection.update_one({'user_id': user_id}, {'$set': {'user_id': user_id}}, upsert=True)
         await greet_user(message)
-
+        
+    except ValueError:
+        reply = await message.reply_text("Invalid File ID.")
+        await auto_delete_message(message, reply)
+    except FloodWait as f:
+        await asyncio.sleep(f.value)
+        await start_command(client, message)  # Retry after the flood wait
     except Exception as e:
         logger.error(f"Error in start command: {e}")
-        reply = await message.reply_text(f"An error occurred: {e}")
-        await auto_delete_message(message, reply)
+        await auto_delete_message(message, await message.reply_text(f"An error occurred: {e}"))
 
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio) & filters.user(OWNER_ID))
 async def handle_dm(client, message):
