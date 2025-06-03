@@ -54,56 +54,57 @@ bot = Client(
 
 @bot.on_message(filters.private & filters.command("start"))
 async def handle_start(client, message):
-    logger.info(f"Received {message}")  
-    try:
-        user_id = message.from_user.id
-        user_link = await get_user_link(message.from_user)
+    user_id = message.from_user.id
+    user_link = await get_user_link(message.from_user)
 
+    try:
+        # If there are extra arguments with /start
         if len(message.command) > 1:
-            command_arg = message.command[1]
-            
-            # Handle token verification
+            command_arg = message.command[1].strip()
+
+            # Token verification flow
             if command_arg.startswith("token_"):
                 input_token = command_arg[6:]
                 token_msg = await verify_token(user_id, input_token)
                 reply = await message.reply_text(token_msg)
-                await bot.send_message(LOG_CHANNEL_ID, f"User🕵️‍♂️{user_link} with 🆔 {user_id} @{bot_username} {token_msg}", parse_mode=enums.ParseMode.HTML)
+                await bot.send_message(
+                    LOG_CHANNEL_ID,
+                    f"User🕵️‍♂️{user_link} with 🆔 {user_id} @{bot_username} {token_msg}",
+                    parse_mode=enums.ParseMode.HTML
+                )
                 await auto_delete_message(message, reply)
                 return
-            else:
-                # Handle file flow
-                file_id = int(command_arg)
 
-                if not await check_access(message, user_id):
-                    return
-
-                file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
-
-                media = file_message.video or file_message.audio or file_message.document
-
-                if media:
-                    copy_message = await file_message.copy(chat_id=message.chat.id)
-                    user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
-                    await auto_delete_message(message, copy_message)
-                    await asyncio.sleep(3)
-                else:
-                    await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
+            # File retrieval flow
+            if not command_arg.isdigit():
+                reply = await message.reply_text("Invalid File ID.")
+                await auto_delete_message(message, reply)
                 return
+
+            file_id = int(command_arg)
+            if not await check_access(message, user_id):
+                return
+
+            file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
+            media = file_message.video or file_message.audio or file_message.document
+
+            if media:
+                copy_message = await file_message.copy(chat_id=message.chat.id)
+                user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
+                await auto_delete_message(message, copy_message)
+                await asyncio.sleep(3)
+            else:
+                await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
+            return
 
         # Default flow (no arguments)
         await mongo_collection.update_one({'user_id': user_id}, {'$set': {'user_id': user_id}}, upsert=True)
         await greet_user(message)
-        
-    except ValueError:
-        reply = await message.reply_text("Invalid File ID.")
-        await auto_delete_message(message, reply)
-    except FloodWait as f:
-        await asyncio.sleep(f.value)
-        await handle_start(client, message)  # Retry after the flood wait
+
     except Exception as e:
         logger.error(f"Error in start command: {e}")
-        await auto_delete_message(message, await message.reply_text(f"An error occurred: {e}"))
-
+        reply = await message.reply_text(f"An error occurred: {e}")
+        await auto_delete_message(message, reply)
 
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio) & filters.user(OWNER_ID))
 async def handle_dm(client, message):
