@@ -3,8 +3,6 @@ import asyncio
 import requests, random
 from config import *
 
-poster_url = lambda: f"https://image.tmdb.org/t/p/w500{random.choice(requests.get('https://api.themoviedb.org/3/movie/popular', params={'api_key': TMDB_API_KEY}).json().get('results', [{'poster_path': None}])).get('poster_path')}"
-
 async def remove_unwanted(input_string):
     # Use regex to match .mkv or .mp4 and everything that follows
     result = re.split(r'(\.mkv|\.mp4)', input_string)

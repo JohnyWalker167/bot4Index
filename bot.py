@@ -15,6 +15,8 @@ from asyncio import Queue
 
 uvloop.install()
 
+
+
 # Define an async queue to handle messages sequentially
 message_queue = Queue()
 
@@ -289,9 +291,8 @@ async def greet_user(message):
         ]
     )
     
-    rply = await message.reply_photo(
-        photo=f"{poster_url}",
-        caption=greeting_text,
+    rply = await message.reply_text(
+        text=greeting_text,
         reply_markup=buttons
         )
     
