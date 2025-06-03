@@ -65,7 +65,7 @@ async def start_command(client, message):
             
             # Handle token flow
             if command_arg == "token":
-                msg = await bot.get_messages(LOG_CHANNEL_ID, TUT_ID)
+                msg = await bot.get_messages(LOG_CHANNEL_ID, 1415)
                 sent_msg = await msg.copy(chat_id=message.chat.id)
                 await message.delete()
                 await asyncio.sleep(300)
