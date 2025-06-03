@@ -95,9 +95,10 @@ async def handle_start(client, message):
                 user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
                 await auto_delete_message(message, copy_message)
                 await asyncio.sleep(3)
+                return
             else:
                 await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
-            return
+                return
 
         # Default flow (no arguments)
         await mongo_collection.update_one({'user_id': user_id}, {'$set': {'user_id': user_id}}, upsert=True)
