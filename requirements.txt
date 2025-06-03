@@ -1,0 +1,16 @@
+python-dotenv
+pyrofork
+TgCrypto
+wget
+requests
+aiohttp
+motor
+tzlocal
+apscheduler
+python-dateutil
+uvloop
+fastapi
+uvicorn
+pydantic
+fastapi-cache2
+pymongo
