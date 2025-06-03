@@ -54,6 +54,7 @@ bot = Client(
 
 @bot.on_message(filters.private & filters.command("start"))
 async def handle_start(client, message):
+    logger.info(f"Received {message}")  
     try:
         user_id = message.from_user.id
         user_link = await get_user_link(message.from_user)
