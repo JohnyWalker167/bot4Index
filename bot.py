@@ -98,7 +98,10 @@ async def start_command(client, message):
             media = file_message.video or file_message.audio or file_message.document
             if media:
                 copy_message = await file_message.copy(chat_id=message.chat.id)
-                user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
+                if user_id not in user_data:
+                    user_data[user_id] = {"file_count": 1}
+                else:
+                    user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
                 await auto_delete_message(message, copy_message)
                 await asyncio.sleep(3)
             else:
