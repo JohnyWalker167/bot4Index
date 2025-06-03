@@ -64,6 +64,15 @@ async def handle_start(client, message):
         if len(message.command) > 1:
             command_arg = message.command[1].strip()
 
+            # Handle token flow
+            if command_arg == "token":
+                msg = await bot.get_messages(LOG_CHANNEL_ID, 1415)
+                sent_msg = await msg.copy(chat_id=message.chat.id)
+                await message.delete()
+                await asyncio.sleep(300)
+                await sent_msg.delete()
+                return
+
             # Token verification flow
             if command_arg.startswith("token_"):
                 input_token = command_arg[6:]
@@ -415,8 +424,10 @@ async def update_token(user_id):
         current_time = tm()
         user_data[user_id] = {"token": token, "time": current_time, "status": "unverified", "file_count": 0}
         urlshortx = await shorten_url(f'https://telegram.me/{bot_username}?start=token_{token}')
+        token_url = f'https://telegram.dog/{bot_username}?start=token'
         button1 = InlineKeyboardButton("Get verified ✅", url=urlshortx)
-        button = InlineKeyboardMarkup([button1]) 
+        button2 = InlineKeyboardButton("How to get verified ✅", url=token_url)
+        button = InlineKeyboardMarkup([[button1], [button2]]) 
         return button
     except Exception as e:
         logger.error(f"error in update_token: {e}")
@@ -427,8 +438,9 @@ async def genrate_token(user_id):
         current_time = tm()
         user_data[user_id] = {"token": token, "time": current_time, "status": "unverified", "file_count": 0}
         urlshortx = await shorten_url(f'https://telegram.me/{bot_username}?start=token_{token}')
-        button1 = InlineKeyboardButton("Get verified ✅", url=urlshortx)
-        button = InlineKeyboardMarkup([button1]) 
+        token_url = f'https://telegram.dog/{bot_username}?start=token'
+        button2 = InlineKeyboardButton("How to get verified ✅", url=token_url)
+        button = InlineKeyboardMarkup([[button1], [button2]]) 
         return button
     except Exception as e:
         logger.error(f"error in genrate_token: {e}")
