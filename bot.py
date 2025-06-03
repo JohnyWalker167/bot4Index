@@ -432,6 +432,7 @@ async def genrate_token(user_id):
         user_data[user_id] = {"token": token, "time": current_time, "status": "unverified", "file_count": 0}
         urlshortx = await shorten_url(f'https://telegram.me/{bot_username}?start=token_{token}')
         token_url = f'https://telegram.dog/{bot_username}?start=token'
+        button1 = InlineKeyboardButton("Get verified ✅", url=urlshortx)
         button2 = InlineKeyboardButton("How to get verified ✅", url=token_url)
         button = InlineKeyboardMarkup([[button1], [button2]]) 
         return button
