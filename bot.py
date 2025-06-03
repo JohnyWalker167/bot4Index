@@ -82,21 +82,11 @@ async def start_command(client, message):
                 return
 
             # Handle file flow
-            if not command_arg.isdigit():
-                reply = await message.reply_text("Invalid File ID.")
-                await auto_delete_message(message, reply)
-                return
-            
             file_id = int(command_arg)
             if not await check_access(message, user_id):
                 return
             
-            try:
-                file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
-            except Exception:
-                await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
-                return
-            
+            file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
             media = file_message.video or file_message.audio or file_message.document
             if media:
                 copy_message = await file_message.copy(chat_id=message.chat.id)
@@ -406,15 +396,13 @@ async def check_access(message, user_id):
                 return False
         else:
             button = await update_token(user_id)
-            send_message = await message.reply_photo(photo=f"{POSTER_URL}", 
-                                                     caption=f"👋 Welcome! Please get your token verified using the link below to access your files instantly. 🚀", 
+            send_message = await message.reply_text(text=f"👋 Welcome! Please get your token verified using the link below to access your files instantly. 🚀", 
                                                      reply_markup=button)
             await auto_delete_message(message, send_message)
             return False
     else:
         button = await genrate_token(user_id)
-        send_message = await message.reply_photo(photo=f"{POSTER_URL}", 
-                                                    caption=f"👋 Welcome! Please get your token verified using the link below to access your files instantly. 🚀", 
+        send_message = await message.reply_text(text=f"👋 Welcome! Please get your token verified using the link below to access your files instantly. 🚀", 
                                                     reply_markup=button)        
         await auto_delete_message(message, send_message)
         return False
