@@ -157,6 +157,7 @@ async def channel_file_handler(client, message):
         
         if file_info["file_name"]:
             upsert_file_info(file_info)
+            invalidate_channel_cache(channel_id)
     except Exception as e:
         await safe_api_call(message.reply_text(f"❌ Error saving file: {e}"))
 
