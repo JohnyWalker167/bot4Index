@@ -20,7 +20,7 @@ from utility import (
     generate_token, shorten_url, get_token_link, extract_channel_and_msg_id,
     safe_api_call, get_allowed_channels, invalidate_channel_cache,
     generate_c_link, upsert_file_info, extract_file_info,
-    delete_after_delay
+    delete_after_delay, human_readable_size
 )
 from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
