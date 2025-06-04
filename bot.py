@@ -376,6 +376,30 @@ async def send_log_file(client, message: Message):
     except Exception as e:
         await safe_api_call(message.reply_text(f"Failed to send log file: {e}"))
 
+@bot.on_message(filters.command("stats") & filters.private & filters.user(OWNER_ID))
+async def stats_command(client, message: Message):
+    """Show statistics (only for OWNER_ID)."""
+    try:
+        total_users = auth_users_col.count_documents({})
+        total_files = files_col.count_documents({})
+        pipeline = [
+            {"$group": {"_id": None, "total": {"$sum": "$file_size"}}}
+        ]
+        result = list(files_col.aggregate(pipeline))
+        total_storage = result[0]["total"] if result else 0
+
+        stats = db.command("dbstats")
+        db_storage = stats.get("storageSize", 0)
+
+        await message.reply_text(
+            f"👤 Total users: <b>{total_users}</b>\n"
+            f"📁 Total files: <b>{total_files}</b>\n"
+            f"💾 Files size: <b>{human_readable_size(total_storage)}</b>\n"
+            f"📊 Database storage used: <b>{db_storage / (1024 * 1024):.2f} MB</b>",
+        )
+    except Exception as e:
+        await message.reply_text(f"⚠️ An error occurred while fetching stats:\n<code>{e}</code>")
+
 # =========================
 # Main Entrypoint
 # =========================
