@@ -19,8 +19,9 @@ from utility import (
     add_user, is_token_valid, authorize_user, is_user_authorized,
     generate_token, shorten_url, get_token_link, extract_channel_and_msg_id,
     safe_api_call, get_allowed_channels, invalidate_channel_cache,
-    generate_c_link, upsert_file_info, extract_file_info,
     delete_after_delay, human_readable_size,
+    queue_file_for_processing, file_queue_worker,
+    file_queue
 )
 from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
@@ -132,33 +133,12 @@ async def start_handler(client, message):
 
 @bot.on_message(filters.document | filters.video | filters.audio | filters.photo)
 async def channel_file_handler(client, message):
-    """
-    Handles incoming files in allowed channels.
-    - Saves file info to the database.
-    - Checks for duplicates by file name.
-    """
-    try:
-        allowed_channels = await get_allowed_channels()
-        if message.chat.id not in allowed_channels:
-            return  # Ignore files from non-allowed channels and private chats
-
-        file_info = extract_file_info(message)
-        # Check for duplicate by file name in this channel
-        existing = files_col.find_one({
-            "channel_id": file_info["channel_id"],
-            "file_name": file_info["file_name"]
-        })
-        if existing:
-            telegram_link = generate_c_link(existing["channel_id"], existing["message_id"])
-            await safe_api_call(message.reply_text(
-                f"⚠️ A file with this name is already indexed.\nLink: {telegram_link}"
-            ))
-            return
-        
-        if file_info["file_name"]:
-            file_queue.put(file_info)
-    except Exception as e:
-        await safe_api_call(message.reply_text(f"❌ Error saving file: {e}"))
+    allowed_channels = await get_allowed_channels()
+    if message.chat.id not in allowed_channels:
+        return
+    await queue_file_for_processing(message, reply_func=message.reply_text)
+    await file_queue.join()
+    invalidate_channel_cache(message.chat.id)
 
 @bot.on_message(filters.command("index") & filters.user(OWNER_ID))
 async def index_channel_files(client, message: Message):
@@ -207,8 +187,8 @@ async def index_channel_files(client, message: Message):
 
     await message.reply_text(f"Indexing files from {start_msg_id} to {end_msg_id} in channel {channel_id}...")
 
-    batch_size = 50  # Process messages in batches for efficiency
-    total_saved = 0
+    batch_size = 50
+    total_queued = 0
     for batch_start in range(start_msg_id, end_msg_id + 1, batch_size):
         batch_end = min(batch_start + batch_size - 1, end_msg_id)
         ids = list(range(batch_start, batch_end + 1))
@@ -224,24 +204,15 @@ async def index_channel_files(client, message: Message):
             if not msg:
                 continue
             if msg.document or msg.video or msg.audio or msg.photo:
-                file_info = extract_file_info(msg, channel_id=channel_id)
-                existing = files_col.find_one({
-                    "channel_id": file_info["channel_id"],
-                    "file_name": file_info["file_name"]
-                })
-                if existing:
-                    telegram_link = generate_c_link(existing["channel_id"], existing["message_id"])
-                    await safe_api_call(message.reply_text(
-                        f"⚠️ A file with this name is already indexed.\nLink: {telegram_link}"
-                    ))
-                    return
-                
-                if file_info["file_name"]:
-                    upsert_file_info(file_info)
-                    total_saved += 1
+                await queue_file_for_processing(
+                    msg,
+                    channel_id=channel_id,
+                    reply_func=message.reply_text
+                )
+                total_queued += 1
         invalidate_channel_cache(channel_id)
 
-    await message.reply_text(f"✅ Indexed {total_saved} files from channel {channel_id}.")
+    await message.reply_text(f"✅ Queued {total_queued} files from channel {channel_id} for processing.")
 
 @bot.on_message(filters.command("delete") & filters.user(OWNER_ID))
 async def delete_file_handler(client, message: Message):
@@ -411,7 +382,7 @@ async def main():
     """
     await bot.start()
     bot.loop.create_task(start_fastapi())
-
+    bot.loop.create_task(file_queue_worker())  # Start the queue worker
 
 async def start_fastapi():
     """

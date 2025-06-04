@@ -215,4 +215,45 @@ async def delete_after_delay(client, chat_id, msg_id):
     except Exception:
         pass
 
+# =========================
+# Queue System for File Processing
+# =========================
 
+file_queue = asyncio.Queue()
+
+async def file_queue_worker():
+    while True:
+        item = await file_queue.get()
+        file_info, reply_func = item
+        try:
+            # Check for duplicate by file name in this channel
+            existing = files_col.find_one({
+                "channel_id": file_info["channel_id"],
+                "file_name": file_info["file_name"]
+            })
+            if existing:
+                telegram_link = generate_c_link(existing["channel_id"], existing["message_id"])
+                if reply_func:
+                    await safe_api_call(reply_func(
+                        f"⚠️ A file with this name is already indexed.\nLink: {telegram_link}"
+                    ))
+            else:
+                upsert_file_info(file_info)
+        except Exception as e:
+            if reply_func:
+                await safe_api_call(reply_func(f"❌ Error saving file: {e}"))
+        finally:
+            file_queue.task_done()
+            
+# =========================
+# Unified File Queueing
+# =========================
+
+async def queue_file_for_processing(message, channel_id=None, reply_func=None):
+    try:
+        file_info = extract_file_info(message, channel_id=channel_id)
+        if file_info["file_name"]:
+            await file_queue.put((file_info, reply_func))
+    except Exception as e:
+        if reply_func:
+            await safe_api_call(reply_func(f"❌ Error queuing file: {e}"))
