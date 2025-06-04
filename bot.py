@@ -22,7 +22,7 @@ from utility import (
     generate_c_link, upsert_file_info, extract_file_info,
     delete_after_delay
 )
-from db import users_col, tokens_col, files_col, allowed_channels_col
+from db import users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
 
 # =========================
@@ -380,7 +380,8 @@ async def send_log_file(client, message: Message):
 async def stats_command(client, message: Message):
     """Show statistics (only for OWNER_ID)."""
     try:
-        total_users = auth_users_col.count_documents({})
+        total_auth_users = auth_users_col.count_documents({})
+        total_users = users_col.count_documents({})
         total_files = files_col.count_documents({})
         pipeline = [
             {"$group": {"_id": None, "total": {"$sum": "$file_size"}}}
@@ -392,7 +393,7 @@ async def stats_command(client, message: Message):
         db_storage = stats.get("storageSize", 0)
 
         await message.reply_text(
-            f"👤 Total users: <b>{total_users}</b>\n"
+            f"👤 Total auth users: <b>{total_auth_users}/{total_users}</b>\n"
             f"📁 Total files: <b>{total_files}</b>\n"
             f"💾 Files size: <b>{human_readable_size(total_storage)}</b>\n"
             f"📊 Database storage used: <b>{db_storage / (1024 * 1024):.2f} MB</b>",
