@@ -21,7 +21,6 @@ from utility import (
     safe_api_call, get_allowed_channels, invalidate_channel_cache,
     generate_c_link, upsert_file_info, extract_file_info,
     delete_after_delay, human_readable_size,
-    file_queue, file_queue_worker
 )
 from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
@@ -412,7 +411,6 @@ async def main():
     """
     await bot.start()
     bot.loop.create_task(start_fastapi())
-    bot.loop.create_task(file_queue_worker())
 
 
 async def start_fastapi():

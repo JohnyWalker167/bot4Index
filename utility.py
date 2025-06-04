@@ -5,10 +5,8 @@ import uuid
 import requests
 from datetime import datetime, timezone, timedelta
 from pyrogram.errors import FloodWait
-from queue import Queue
 from config import logger
 
-file_queue = asyncio.Queue()
 
 from db import (
     allowed_channels_col,
@@ -217,16 +215,4 @@ async def delete_after_delay(client, chat_id, msg_id):
     except Exception:
         pass
 
-async def file_queue_worker():
-    while True:
-        try:
-            file_info = await file_queue.get()
-            # do processing, DB insert, etc.
-            upsert_file_info(file_info)
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"Error in file_queue_worker: {e}")
-        finally:
-            file_queue.task_done()
-            invalidate_channel_cache(file_info["channel_id"])
+
