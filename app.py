@@ -1,6 +1,6 @@
 import re
 import logging
-from fastapi import FastAPI, HTTPException, Request
+from fast_api import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi.middleware.cors import CORSMiddleware

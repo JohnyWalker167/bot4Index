@@ -1,48 +1,38 @@
-import uuid
+# =========================
+# Imports
+# =========================
 import asyncio
-import uvloop
+import base64
+import os
+import re
 import sys
-from time import time as tm
+from datetime import datetime, timezone
+from collections import defaultdict
+
 from pyrogram import Client, enums, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import ListenerTimeout
+import uvicorn
+
 from config import *
-from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated
-from pyrogram.types import User
-from utility import *
-from shorterner import *
-from motor.motor_asyncio import AsyncIOMotorClient 
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from asyncio import Queue
+from utility import (
+    add_user, is_token_valid, authorize_user, is_user_authorized,
+    generate_token, shorten_url, get_token_link, extract_channel_and_msg_id,
+    safe_api_call, get_allowed_channels, invalidate_channel_cache,
+    generate_c_link, upsert_file_info, extract_file_info,
+    delete_after_delay
+)
+from db import users_col, tokens_col, files_col, allowed_channels_col
+from fast_api import api
 
-uvloop.install()
+# =========================
+# Constants & Globals
+# =========================
 
+TOKEN_VALIDITY_SECONDS = 24 * 60 * 60  # 24 hours token validity
+MAX_FILES_PER_SESSION = 10             # Max files a user can access per session
 
-
-# Define an async queue to handle messages sequentially
-message_queue = Queue()
-
-user_data = {}
-user_sessions = {}
-LIMIT_PER_PAGE = 5  
-
-# Initialize MongoDB client
-
-MONGO_COLLECTION = "users"
-TMDB_COLLECTION = "tmdb"
-mongo_client = AsyncIOMotorClient(MONGO_URI)  # Use AsyncIOMotorClient
-db = mongo_client[MONGO_DB_NAME]
-collection = db[COLLECTION_NAME]
-mongo_collection = db[MONGO_COLLECTION]
-tmdb_collection = db[TMDB_COLLECTION]
-
-# Function to create a text index on file_name field
-async def create_text_index():
-    indexes = await collection.index_information()
-    if "file_name_text" not in indexes:
-        result = await collection.create_index([("file_name", "text")])
-        logging.info(f"Index created: {result}")
-        
-# PROGRAM BOT INITIALIZATION 
-
+# Initialize Pyrogram bot client
 bot = Client(
     "bot",
     api_id=API_ID,
@@ -50,426 +40,378 @@ bot = Client(
     bot_token=BOT_TOKEN,
     workers=1000,
     parse_mode=enums.ParseMode.HTML
-).start()
+)
 
-# *---------------------------------------------- HANDLER'S ----------------------------------------------------*
+# Track how many files each user has accessed in the current session
+user_file_count = defaultdict(int)
 
-@bot.on_message(filters.private & filters.command("start"))
-async def start_command(client, message):
-    try:
-        user_id = message.from_user.id
-        user_link = await get_user_link(message.from_user)
+# =========================
+# Bot Command Handlers
+# =========================
 
-        if len(message.command) > 1:
-            command_arg = message.command[1]
-            
-            # Handle token flow
-            if command_arg == "token":
-                msg = await bot.get_messages(LOG_CHANNEL_ID, 1415)
-                sent_msg = await msg.copy(chat_id=message.chat.id)
-                await message.delete()
-                await asyncio.sleep(300)
-                await sent_msg.delete()
-                return
+@bot.on_message(filters.command("start") & filters.private)
+async def start_handler(client, message):
+    """
+    Handles the /start command.
+    - Registers the user.
+    - Handles token-based authorization.
+    - Handles file access via deep link.
+    - Sends a greeting if no special argument is provided.
+    """
+    user_id = message.from_user.id
+    add_user(user_id)
+    bot_username = BOT_USERNAME
 
-            # Handle token verification
-            if command_arg.startswith("token_"):
-                input_token = command_arg[6:]
-                token_msg = await verify_token(user_id, input_token)
-                reply = await message.reply_text(token_msg)
-                await bot.send_message(LOG_CHANNEL_ID, f"User🕵️‍♂️{user_link} with 🆔 {user_id} @{bot_username} {token_msg}", parse_mode=enums.ParseMode.HTML)
-                await auto_delete_message(message, reply)
-                return
+    # --- Token-based authorization ---
+    if len(message.command) == 2 and message.command[1].startswith("token_"):
+        if is_token_valid(message.command[1][6:], user_id):
+            authorize_user(user_id)
+            await safe_api_call(message.reply_text("✅ You are now authorized to access files for 24 hours."))
+        else:
+            await safe_api_call(message.reply_text("❌ Invalid or expired token. Please get a new link."))
+        return
 
-            # Handle file flow
-            file_id = int(command_arg)
-            if not await check_access(message, user_id):
-                return
-            
-            file_message = await bot.get_messages(DB_CHANNEL_ID, file_id)
-            media = file_message.video or file_message.audio or file_message.document
-            if media:
-                copy_message = await file_message.copy(chat_id=message.chat.id)
-                if user_id not in user_data:
-                    user_data[user_id] = {"file_count": 1}
-                else:
-                    user_data[user_id]['file_count'] = user_data[user_id].get('file_count', 0) + 1
-                await auto_delete_message(message, copy_message)
-                await asyncio.sleep(3)
-            else:
-                await auto_delete_message(message, await message.reply_text("File not found or inaccessible."))
+    # --- File access via deep link ---
+    if len(message.command) == 2 and message.command[1].startswith("file_"):
+        # Check if user is authorized
+        if not is_user_authorized(user_id):
+            now = datetime.now(timezone.utc)
+            token_doc = tokens_col.find_one({
+                "user_id": user_id,
+                "expiry": {"$gt": now}
+            })
+            token_id = token_doc["token_id"] if token_doc else generate_token(user_id)
+            short_link = shorten_url(get_token_link(token_id, bot_username))
+            await safe_api_call(message.reply_text(
+                "❌ You are not authorized or your access expired.\n"
+                "Please use this link to get access for 24 hours:",
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("Get Access Link", url=short_link)]]
+                )
+            ))
             return
 
-        # Default flow (no arguments)
-        await mongo_collection.update_one({'user_id': user_id}, {'$set': {'user_id': user_id}}, upsert=True)
-        await greet_user(message)
-        
-    except ValueError:
-        reply = await message.reply_text("Invalid File ID.")
-        await auto_delete_message(message, reply)
-    except FloodWait as f:
-        await asyncio.sleep(f.value)
-        await start_command(client, message)  # Retry after the flood wait
-    except Exception as e:
-        logger.error(f"Error in start command: {e}")
-        await auto_delete_message(message, await message.reply_text(f"An error occurred: {e}"))
+        # Limit file access per session
+        if user_file_count[user_id] >= MAX_FILES_PER_SESSION:
+            await safe_api_call(message.reply_text("❌ You have reached the maximum of 10 files per session."))
+            return
 
-@bot.on_message(filters.private & (filters.document | filters.video | filters.audio) & filters.user(OWNER_ID))
-async def handle_dm(client, message):
-    media = message.video or message.document or message.audio
-    caption = await remove_unwanted(message.caption if message.caption else media.file_name)
-    cpy_msg = await message.copy(DB_CHANNEL_ID, caption=f"<code>{caption}</code>", parse_mode=enums.ParseMode.HTML)
-    await message_queue.put(cpy_msg)
-    await message.delete()
+        # Decode file link and send file
+        try:
+            b64 = message.command[1][5:]
+            padding = '=' * (-len(b64) % 4)
+            decoded = base64.urlsafe_b64decode(b64 + padding).decode()
+            channel_id_str, msg_id_str = decoded.split("_")
+            channel_id = int(channel_id_str)
+            msg_id = int(msg_id_str)
+        except Exception:
+            await safe_api_call(message.reply_text("Invalid file link."))
+            return
 
-@bot.on_message(filters.chat(DB_CHANNEL_ID) & (filters.document | filters.video | filters.audio))
-async def handle_channel(client, message):
-    # Add the message to the queue for sequential processing
-    await message_queue.put(message)
+        file_doc = files_col.find_one({"channel_id": channel_id, "message_id": msg_id})
+        if not file_doc:
+            await safe_api_call(message.reply_text("File not found."))
+            return
 
+        try:
+            sent = await safe_api_call(client.copy_message(
+                chat_id=message.chat.id,
+                from_chat_id=file_doc["channel_id"],
+                message_id=file_doc["message_id"]
+            ))
+            user_file_count[user_id] += 1
+            bot.loop.create_task(delete_after_delay(client, sent.chat.id, sent.id))
+        except Exception as e:
+            await safe_api_call(message.reply_text(f"Failed to send file: {e}"))
+        return
 
-@bot.on_message(filters.private & filters.command("index") & filters.user(OWNER_ID))
-async def handle_index(client, message):
+    # --- Default greeting ---
+    await safe_api_call(message.reply_text(
+        "👋 Hello! Welcome to the bot. Use a valid access link to get file access."
+    ))
+
+@bot.on_message(filters.document | filters.video | filters.audio | filters.photo)
+async def channel_file_handler(client, message):
+    """
+    Handles incoming files in allowed channels.
+    - Saves file info to the database.
+    - Checks for duplicates by file name.
+    """
     try:
-        user_id = message.from_user.id
-        user_sessions[user_id] = True
+        allowed_channels = await get_allowed_channels()
+        if message.chat.id not in allowed_channels:
+            return  # Ignore files from non-allowed channels and private chats
 
-        # Helper function to get user input
-        async def get_user_input(prompt):
-            bot_message = await message.reply_text(prompt)
-            user_message = await bot.listen(chat_id=message.chat.id, filters=filters.user(OWNER_ID))
-            if user_sessions.get(user_id) == False:
-                raise Exception("Process cancelled")
-            asyncio.create_task(auto_delete_message(bot_message, user_message))
-            return await extract_tg_link(user_message.text.strip())
-
-        async def auto_delete_message(bot_message, user_message):
-            await asyncio.sleep(10)
-            await bot_message.delete()
-            await user_message.delete()
-
-        # Get the start and end message IDs
-        start_msg_id = int(await get_user_input("Send first post link"))
-        end_msg_id = int(await get_user_input("Send end post link"))
-
-        batch_size = 199
-
-        for start in range(int(start_msg_id), int(end_msg_id) + 1, batch_size):            
-            if user_sessions.get(user_id) == False:
-                raise Exception("Process cancelled")
-            end = min(start + batch_size - 1, int(end_msg_id))
-            try:
-                file_messages = await bot.get_messages(DB_CHANNEL_ID, list(range(start, end + 1)))
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
-                file_messages = await bot.get_messages(DB_CHANNEL_ID, list(range(start, end + 1)))
-            await asyncio.sleep(3)  # Add a small delay between batches
-
-            for file_message in file_messages:
-                await message_queue.put(file_message)
-
-    except Exception as e:
-        await message.reply_text(f"An error occurred: {e}")
-    finally:
-        user_sessions.pop(user_id, None)
-
-@bot.on_message(filters.private & filters.command("cancel") & filters.user(OWNER_ID))
-async def cancel_process(client, message):
-    user_id = message.from_user.id
-    user_sessions[user_id] = False
-    await message.reply_text("Process has been cancelled.")
-
-
-# Get Total User Command
-
-@bot.on_message(filters.command("users") & filters.user(OWNER_ID))
-async def total_users_command(client, message):
-    user_id = message.from_user.id
-
-    total_users = await mongo_collection.count_documents({})
-    total_files = await collection.count_documents({})
-    response_text = f"Total users: {total_users}\nTotal files: {total_files}"
-    reply = await bot.send_message(user_id, response_text)
-    await auto_delete_message(message, reply)
-
-@bot.on_message(filters.private & filters.command("del") & filters.user(OWNER_ID))
-async def delete_command(client, message):
-    try:               
-        bot_message = await message.reply_text("Send file link")
-        user_message = await bot.listen(chat_id=message.chat.id, filters=filters.user(OWNER_ID))
-        file_link = user_message.text.strip()
-        file_id = await extract_tg_link(file_link)
-        asyncio.create_task(auto_delete_message(bot_message, user_message))
-        result = await collection.delete_one({"file_id": file_id})     
-        if result.deleted_count > 0:
-            bot_message = await message.reply_text(f"Database record deleted {file_id}.")
-            await auto_delete_message(message, bot_message)
-        else:
-            bot_message = await message.reply_text(f"No file found with ID {file_id} in the database.")
-            await auto_delete_message(message, bot_message)
-    except Exception as e:
-        bot_message = await message.reply_text(f"Error: {e}")
-        await auto_delete_message(message, bot_message)
-
+        file_info = extract_file_info(message)
+        # Check for duplicate by file name in this channel
+        existing = files_col.find_one({
+            "channel_id": file_info["channel_id"],
+            "file_name": file_info["file_name"]
+        })
+        if existing:
+            telegram_link = generate_c_link(existing["channel_id"], existing["message_id"])
+            await safe_api_call(message.reply_text(
+                f"⚠️ A file with this name is already indexed.\nLink: {telegram_link}"
+            ))
+            return
         
-# Get Log Command
-@bot.on_message(filters.command("log") & filters.user(OWNER_ID))
-async def log_command(client, message):
-    user_id = message.from_user.id
+        if file_info["file_name"]:
+            upsert_file_info(file_info)
+    except Exception as e:
+        await safe_api_call(message.reply_text(f"❌ Error saving file: {e}"))
 
-    # Send the log file
+@bot.on_message(filters.command("index") & filters.user(OWNER_ID))
+async def index_channel_files(client, message: Message):
+    """
+    Handles the /index command for the owner.
+    - Asks for start and end file links.
+    - Indexes files in the specified range from allowed channels.
+    - Only supports /c/ links.
+    """
+    prompt = await safe_api_call(message.reply_text("Please send the **start file link** (Telegram message link, only /c/ links supported):"))
     try:
-        reply = await bot.send_document(user_id, document=LOG_FILE_NAME, caption="Bot Log File")
-        await auto_delete_message(message, reply)
+        start_msg = await client.listen(message.chat.id, timeout=120)
+    except ListenerTimeout:
+        await safe_api_call(prompt.edit_text("⏰ Timeout! You took too long to reply. Please try again."))
+        return
+    start_link = start_msg.text.strip()
+
+    prompt2 = await safe_api_call(message.reply_text("Now send the **end file link** (Telegram message link, only /c/ links supported):"))
+    try:
+        end_msg = await client.listen(message.chat.id, timeout=120)
+    except ListenerTimeout:
+        await safe_api_call(prompt2.edit_text("⏰ Timeout! You took too long to reply. Please try again."))
+        return
+    end_link = end_msg.text.strip()
+
+    try:
+        start_id, start_msg_id = extract_channel_and_msg_id(start_link)
+        end_id, end_msg_id = extract_channel_and_msg_id(end_link)
+
+        if start_id != end_id:
+            await message.reply_text("Start and end links must be from the same channel.")
+            return
+
+        channel_id = start_id
+        allowed_channels = await get_allowed_channels()
+        if channel_id not in allowed_channels:
+            await message.reply_text("❌ This channel is not allowed for indexing.")
+            return
+
+        if start_msg_id > end_msg_id:
+            start_msg_id, end_msg_id = end_msg_id, start_msg_id
+
     except Exception as e:
-        await bot.send_message(user_id, f"Failed to send log file. Error: {str(e)}")
+        await message.reply_text(f"Invalid link: {e}")
+        return
 
-@bot.on_message(filters.private & filters.command('broadcast') & filters.user(OWNER_ID))
-async def handle_broadcast(client, message):
-    if message.reply_to_message:
-        query = await full_userbase()
-        broadcast_msg = message.reply_to_message
-        total = 0
-        successful = 0
-        blocked = 0
-        deleted = 0
-        unsuccessful = 0
-        
-        pls_wait = await message.reply("<i>Broadcasting Message.. This will Take Some Time</i>")
-        for chat_id in query:
-            try:
-                await asyncio.sleep(3)
-                await broadcast_msg.copy(chat_id)
-                successful += 1
-            except FloodWait as e:
-                await asyncio.sleep(e.x)
-                await broadcast_msg.copy(chat_id)
-                successful += 1
-            except UserIsBlocked:
-                await del_user(chat_id)
-                blocked += 1
-            except InputUserDeactivated:
-                await del_user(chat_id)
-                deleted += 1
-            except:
-                unsuccessful += 1
-                pass
-            total += 1
-        
-        status = f"""<b><u>Broadcast Completed</u>
+    await message.reply_text(f"Indexing files from {start_msg_id} to {end_msg_id} in channel {channel_id}...")
 
-Total Users: <code>{total}</code>
-Successful: <code>{successful}</code>
-Blocked Users: <code>{blocked}</code>
-Deleted Accounts: <code>{deleted}</code>
-Unsuccessful: <code>{unsuccessful}</code></b>"""
-        
-        return await pls_wait.edit(status)
+    batch_size = 50  # Process messages in batches for efficiency
+    total_saved = 0
+    for batch_start in range(start_msg_id, end_msg_id + 1, batch_size):
+        batch_end = min(batch_start + batch_size - 1, end_msg_id)
+        ids = list(range(batch_start, batch_end + 1))
+        try:
+            messages = []
+            for msg_id in ids:
+                msg = await safe_api_call(client.get_messages(channel_id, msg_id))
+                messages.append(msg)
+        except Exception as e:
+            await message.reply_text(f"Failed to get messages {batch_start}-{batch_end}: {e}")
+            continue
+        for msg in messages:
+            if not msg:
+                continue
+            if msg.document or msg.video or msg.audio or msg.photo:
+                file_info = extract_file_info(msg, channel_id=channel_id)
+                existing = files_col.find_one({
+                    "channel_id": file_info["channel_id"],
+                    "file_name": file_info["file_name"]
+                })
+                if existing:
+                    telegram_link = generate_c_link(existing["channel_id"], existing["message_id"])
+                    await safe_api_call(message.reply_text(
+                        f"⚠️ A file with this name is already indexed.\nLink: {telegram_link}"
+                    ))
+                    return
+                
+                if file_info["file_name"]:
+                    upsert_file_info(file_info)
+                    total_saved += 1
+        invalidate_channel_cache(channel_id)
 
+    await message.reply_text(f"✅ Indexed {total_saved} files from channel {channel_id}.")
+
+@bot.on_message(filters.command("delete") & filters.user(OWNER_ID))
+async def delete_file_handler(client, message: Message):
+    """
+    Handles the /delete command for the owner.
+    - Deletes a file from the database using a Telegram message link or IDs.
+    - Only supports /c/ links.
+    """
+    if len(message.command) == 2 and message.command[1].startswith("https://t.me/"):
+        link = message.command[1]
+        try:
+            match = re.search(r"t\.me/c/(-?\d+)/(\d+)", link)
+            if match:
+                channel_id = int("-100" + match.group(1)) if not match.group(1).startswith("-100") else int(match.group(1))
+                message_id = int(match.group(2))
+            else:
+                await message.reply_text("Invalid Telegram message link. Only /c/ links are supported.")
+                return
+        except Exception:
+            await message.reply_text("Invalid Telegram message link.")
+            return
+    elif len(message.command) == 3:
+        try:
+            channel_id = int(message.command[1])
+            message_id = int(message.command[2])
+        except Exception:
+            await message.reply_text("Usage: /delete <telegram_message_link> or /delete <channel_id> <message_id>")
+            return
     else:
-        msg = await message.reply("<code>Use this command as a replay to any telegram message with out any spaces.</code>")
-        await asyncio.sleep(8)
-        await msg.delete()
+        await message.reply_text("Usage: /delete <telegram_message_link> or /delete <channel_id> <message_id>")
+        return
+
+    try:
+        result = files_col.delete_one({"channel_id": channel_id, "message_id": message_id})
+        invalidate_channel_cache(channel_id)
+        if result.deleted_count:
+            await message.reply_text(f"✅ File ({channel_id}, {message_id}) deleted from database.")
+        else:
+            await message.reply_text("❌ File not found in database.")
+    except Exception as e:
+        await message.reply_text(f"Error: {e}")
 
 @bot.on_message(filters.command('restart') & filters.private & filters.user(OWNER_ID))
 async def restart(client, message):
+    """
+    Handles the /restart command for the owner.
+    - Restarts the bot by running update.py and re-executing bot.py.
+    """
     os.system("python3 update.py")  
     os.execl(sys.executable, sys.executable, "bot.py")
 
-# *-------------------------------------------------------- HELPER'S ---------------------------------------------------------*
-
-async def greet_user(message):
-    # Get the new user's first name
-    user_link = await get_user_link(message.from_user)
-
-    # Create the greeting message
-    greeting_text = (
-        f"Hello {user_link}, 👋\n\n"
-        "Welcome to FileShare Bot! 🌟\n\n"
-        "Here, you can easily access files.\n"
-        "We hope you find this bot useful! If you have any questions, feel free to reach out to us. Happy sharing! 😊"
-    )
-
-    # Create the buttons
-    buttons = InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Website", url=f"{WEBSITE}")],
-        ]
-    )
-    
-    rply = await message.reply_text(
-        text=greeting_text,
-        reply_markup=buttons
+@bot.on_message(filters.command("addchannel") & filters.user(OWNER_ID))
+async def add_channel_handler(client, message: Message):
+    """
+    Handles the /addchannel command for the owner.
+    - Adds a channel to the allowed channels list in the database.
+    """
+    if len(message.command) < 3:
+        await message.reply_text("Usage: /addchannel channel_id channel_name")
+        return
+    try:
+        channel_id = int(message.command[1])
+        channel_name = " ".join(message.command[2:])
+        allowed_channels_col.update_one(
+            {"channel_id": channel_id},
+            {"$set": {"channel_id": channel_id, "channel_name": channel_name}},
+            upsert=True
         )
-    
-    await auto_delete_message(message, rply)
+        await message.reply_text(f"✅ Channel {channel_id} ({channel_name}) added to allowed channels.")
+    except Exception as e:
+        await message.reply_text(f"Error: {e}")
 
-async def process_message(client, message):
-    media = message.document or message.video or message.audio
-
-    if media:
-        caption = await remove_unwanted(message.caption if message.caption else media.file_name)
-        file_name = await remove_extension(caption)
-        file_id = message.id
-        file_size = humanbytes(media.file_size)
-        title = media.title if message.audio else None
-        artist = media.performer if message.audio else None
-
-        # Check if the file_name already exists in the database
-        existing_document = await collection.find_one({"file_name": file_name})
-
-        if existing_document:
-            await bot.send_message(OWNER_ID, text=f"Duplicate file detected. The file '<code>{file_name}</code>' already exists in the database.")
-            return
-
-        if message.audio:
-            tg_document = {
-                "file_id": file_id,
-                "file_name": file_name,
-                "title": title,
-                "artist": artist,
-                "file_size": file_size
-            }
+@bot.on_message(filters.command("removechannel") & filters.user(OWNER_ID))
+async def remove_channel_handler(client, message: Message):
+    """
+    Handles the /removechannel command for the owner.
+    - Removes a channel from the allowed channels list in the database.
+    """
+    if len(message.command) != 2:
+        await message.reply_text("Usage: /removechannel channel_id")
+        return
+    try:
+        channel_id = int(message.command[1])
+        result = allowed_channels_col.delete_one({"channel_id": channel_id})
+        if result.deleted_count:
+            await message.reply_text(f"✅ Channel {channel_id} removed from allowed channels.")
         else:
-            tg_document = {
-                "file_id": file_id,
-                "file_name": file_name,
-                "file_size": file_size
-            }
+            await message.reply_text("❌ Channel not found in allowed channels.")
+    except Exception as e:
+        await message.reply_text(f"Error: {e}")
 
+@bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast_handler(client, message: Message):
+    """
+    Handles the /broadcast command for the owner.
+    - Broadcasts a message to all users in the database.
+    - Removes users from DB if blocked or deactivated.
+    """
+    if len(message.command) < 2:
+        await message.reply_text("Usage: /broadcast <your message>")
+        return
+    text = message.text.split(maxsplit=1, sep=" ",)[1]
+    users = users_col.find({}, {"_id": 0, "user_id": 1})
+    total = 0
+    failed = 0
+    removed = 0
+    for user in users:
         try:
-            await collection.insert_one(tg_document)
+            await safe_api_call(client.send_message(user["user_id"], text))
+            total += 1
         except Exception as e:
-            await message.reply_text(f"Unable to insert data: {e}")
-               
-# Function to process the queue in sequence
-async def process_queue():
-    while True:
-        message = await message_queue.get()  # Get the next message from the queue
-        if message is None:  # Exit condition
-            break
-        await process_message(bot, message)  # Process the message
-        message_queue.task_done()
-                               
-async def get_user_link(user: User) -> str:
-    try:
-        user_id = user.id if hasattr(user, 'id') else None
-        first_name = user.first_name if hasattr(user, 'first_name') else "Unknown"
-    except Exception as e:
-        logger.info(f"{e}")
-        user_id = None
-        first_name = "Unknown"
-    
-    if user_id:
-        return f'<a href=tg://user?id={user_id}>{first_name}</a>'
-    else:
-        return first_name
+            failed += 1
+            err_str = str(e)
+            if "UserIsBlocked" in err_str or "InputUserDeactivated" in err_str:
+                users_col.delete_one({"user_id": user["user_id"]})
+                removed += 1
+            continue
+    await message.reply_text(f"✅ Broadcast sent to {total} users. Failed: {failed}. Removed: {removed}")
 
-async def verify_token(user_id, input_token):
-    current_time = tm()
-
-    # Check if the user_id exists in user_data
-    if user_id not in user_data:
-        return 'Token Mismatched ❌' 
-    
-    stored_token = user_data[user_id]['token']
-    if input_token == stored_token:
-        token = str(uuid.uuid4())
-        user_data[user_id] = {"token": token, "time": current_time, "status": "verified", "file_count": 0}
-        return f'Token Verified ✅ (Validity: {get_readable_time(TOKEN_TIMEOUT)})'
-    else:
-        return f'Token Mismatched ❌'
-    
-async def check_access(message, user_id):
-    if user_id in user_data:
-        time = user_data[user_id]['time']
-        status = user_data[user_id]['status']
-        file_count = user_data[user_id].get('file_count', 0)
-        expiry = time + TOKEN_TIMEOUT
-        current_time = tm()
-        if current_time < expiry and status == "verified":
-            if file_count < 10:
-                return True
-            else:
-                reply = await message.reply_text(f"You have reached the limit. Please wait until the token expires")
-                await auto_delete_message(message, reply)
-                return False
-        else:
-            button = await update_token(user_id)
-            send_message = await message.reply_text(text=f"👋 Welcome! Please get your token verified using the link below to access your files instantly. 🚀", 
-                                                     reply_markup=button)
-            await auto_delete_message(message, send_message)
-            return False
-    else:
-        button = await genrate_token(user_id)
-        send_message = await message.reply_text(text=f"👋 Welcome! Please get your token verified using the link below to access your files instantly. 🚀", 
-                                                    reply_markup=button)        
-        await auto_delete_message(message, send_message)
-        return False
-
-async def update_token(user_id):
+@bot.on_message(filters.command("log") & filters.user(OWNER_ID))
+async def send_log_file(client, message: Message):
+    """
+    Handles the /log command for the owner.
+    - Sends the bot.log file to the owner.
+    """
+    log_file = "bot_log.txt"
+    if not os.path.exists(log_file):
+        await safe_api_call(message.reply_text("Log file not found."))
+        return
     try:
-        time = user_data[user_id]['time']
-        expiry = time + TOKEN_TIMEOUT
-        if time < expiry:
-            token = user_data[user_id]['token']
-        else:
-            token = str(uuid.uuid4())
-        current_time = tm()
-        user_data[user_id] = {"token": token, "time": current_time, "status": "unverified", "file_count": 0}
-        urlshortx = await shorten_url(f'https://telegram.me/{bot_username}?start=token_{token}')
-        token_url = f'https://telegram.dog/{bot_username}?start=token'
-        button1 = InlineKeyboardButton("Get verified ✅", url=urlshortx)
-        button2 = InlineKeyboardButton("How to get verified ✅", url=token_url)
-        button = InlineKeyboardMarkup([[button1], [button2]]) 
-        return button
+        await safe_api_call(client.send_document(message.chat.id, log_file, caption="Here is the log file."))
     except Exception as e:
-        logger.error(f"error in update_token: {e}")
+        await safe_api_call(message.reply_text(f"Failed to send log file: {e}"))
 
-async def genrate_token(user_id):
-    try:
-        token = str(uuid.uuid4())
-        current_time = tm()
-        user_data[user_id] = {"token": token, "time": current_time, "status": "unverified", "file_count": 0}
-        urlshortx = await shorten_url(f'https://telegram.me/{bot_username}?start=token_{token}')
-        token_url = f'https://telegram.dog/{bot_username}?start=token'
-        button1 = InlineKeyboardButton("Get verified ✅", url=urlshortx)
-        button2 = InlineKeyboardButton("How to get verified ✅", url=token_url)
-        button = InlineKeyboardMarkup([[button1], [button2]]) 
-        return button
-    except Exception as e:
-        logger.error(f"error in genrate_token: {e}")
-
-async def full_userbase():
-    try:
-        cursor = mongo_collection.find({}, {"user_id": 1, "_id": 0})
-        user_ids = []
-        async for document in cursor:
-            user_ids.append(document["user_id"])
-        return user_ids
-    except Exception as e:
-        logger.error(f"Error fetching user base: {e}")
-        return []
-    
-async def del_user(user_id):
-    try:
-        result = await mongo_collection.delete_one({"user_id": user_id})
-        if result.deleted_count > 0:
-            logger.info(f"Successfully deleted user with ID {user_id}")
-        else:
-            logger.warning(f"No user found with ID {user_id}")
-    except Exception as e:
-        logger.error(f"Error deleting user with ID {user_id}: {e}")
+# =========================
+# Main Entrypoint
+# =========================
 
 async def main():
-    await create_text_index()
-    await asyncio.create_task(process_queue())
+    """
+    Starts the bot and FastAPI server.
+    """
+    await bot.start()
+    bot.loop.create_task(start_fastapi())
+
+async def start_fastapi():
+    """
+    Starts the FastAPI server using Uvicorn.
+    """
+    try:
+        config = uvicorn.Config(api, host="0.0.0.0", port=8000, loop="asyncio", log_level="warning")
+        server = uvicorn.Server(config)
+        await server.serve()
+    except KeyboardInterrupt:
+        pass
+        logger.info("FastAPI server stopped.")
 
 if __name__ == "__main__":
+    """
+    Main process entrypoint.
+    - Runs the bot and FastAPI server.
+    - Handles graceful shutdown on KeyboardInterrupt.
+    """
     try:
         bot.loop.run_until_complete(main())
         bot.loop.run_forever()
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received. Shutting down gracefully...")
-    finally:
-        logger.info("Bot has stopped.")
+        bot.stop()
+        tasks = asyncio.all_tasks(loop=bot.loop)
+        for task in tasks:
+            task.cancel()
+        bot.loop.stop()
+        logger.info("Bot stopped.")
