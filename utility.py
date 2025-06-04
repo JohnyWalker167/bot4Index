@@ -5,6 +5,9 @@ import uuid
 import requests
 from datetime import datetime, timezone, timedelta
 from pyrogram.errors import FloodWait
+from queue import Queue
+
+file_queue = Queue()
 
 from db import (
     allowed_channels_col,
@@ -212,3 +215,13 @@ async def delete_after_delay(client, chat_id, msg_id):
         await safe_api_call(client.delete_messages(chat_id, msg_id))
     except Exception:
         pass
+
+async def file_queue_worker():
+    while True:
+        file_info = file_queue.get()
+        try:
+            # do processing, DB insert, etc.
+            upsert_file_info(file_info)
+        finally:
+            file_queue.task_done()
+            invalidate_channel_cache(file_info["channel_id"])

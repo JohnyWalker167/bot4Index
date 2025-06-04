@@ -20,7 +20,8 @@ from utility import (
     generate_token, shorten_url, get_token_link, extract_channel_and_msg_id,
     safe_api_call, get_allowed_channels, invalidate_channel_cache,
     generate_c_link, upsert_file_info, extract_file_info,
-    delete_after_delay, human_readable_size
+    delete_after_delay, human_readable_size,
+    file_queue, file_queue_worker
 )
 from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
@@ -156,8 +157,7 @@ async def channel_file_handler(client, message):
             return
         
         if file_info["file_name"]:
-            upsert_file_info(file_info)
-            invalidate_channel_cache(channel_id)
+            file_queue.put(file_info)
     except Exception as e:
         await safe_api_call(message.reply_text(f"❌ Error saving file: {e}"))
 
@@ -412,6 +412,8 @@ async def main():
     """
     await bot.start()
     bot.loop.create_task(start_fastapi())
+    bot.loop.create_task(file_queue_worker())
+
 
 async def start_fastapi():
     """
