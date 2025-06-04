@@ -22,7 +22,7 @@ from utility import (
     generate_c_link, upsert_file_info, extract_file_info,
     delete_after_delay
 )
-from db import users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
+from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
 
 # =========================
