@@ -6,7 +6,7 @@ from os import environ
 from requests import get as rget
 
 # Logger setup
-LOG_FILE = "bot.log"
+LOG_FILE = "bot_log.txt"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
