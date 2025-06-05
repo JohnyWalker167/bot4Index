@@ -410,6 +410,11 @@ async def tmdb_command(client, message):
 # *-------------------------------------------------------- INLINE SEARCH ---------------------------------------------------------*
 @bot.on_inline_query()
 async def tmdb_inline_search(client, inline_query):
+    # Restrict inline search to OWNER_ID only
+    if inline_query.from_user.id != OWNER_ID:
+        await inline_query.answer([], cache_time=1, switch_pm_text="Owner only", switch_pm_parameter="start")
+        return
+
     query = inline_query.query.strip()
     results = []
 
@@ -431,6 +436,14 @@ async def tmdb_inline_search(client, inline_query):
                 poster_path = result.get("poster_path")
                 poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
 
+                # Construct TMDB link
+                if tmdb_type == "movie":
+                    tmdb_link = f"https://www.themoviedb.org/movie/{tmdb_id}"
+                elif tmdb_type == "tv":
+                    tmdb_link = f"https://www.themoviedb.org/tv/{tmdb_id}"
+                else:
+                    continue
+
                 # The id field must be unique per result
                 results.append(
                     InlineQueryResultArticle(
@@ -439,7 +452,7 @@ async def tmdb_inline_search(client, inline_query):
                         description=tmdb_type.title(),
                         thumb_url=poster_url,
                         input_message_content=InputTextMessageContent(
-                            message_text=f"/tmdbinfo {tmdb_type} {tmdb_id}",
+                            message_text=f"/tmdb {tmdb_link}",
                             parse_mode=enums.ParseMode.HTML
                         )
                     )
