@@ -6,6 +6,7 @@ import base64
 import os
 import re
 import sys
+import aiohttp
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -21,14 +22,17 @@ from utility import (
     safe_api_call, get_allowed_channels, invalidate_channel_cache,
     delete_after_delay, human_readable_size,
     queue_file_for_processing, file_queue_worker,
-    file_queue
+    file_queue, extract_tmdb_link
 )
 from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
+from tmdb import get_by_id
+import logging
+from pyrogram.types import InlineQueryResultArticle, InputTextMessageContent
 
 # =========================
 # Constants & Globals
-# =========================
+# ========================= 
 
 TOKEN_VALIDITY_SECONDS = 24 * 60 * 60  # 24 hours token validity
 MAX_FILES_PER_SESSION = 10             # Max files a user can access per session
@@ -363,14 +367,100 @@ async def stats_command(client, message: Message):
         stats = db.command("dbstats")
         db_storage = stats.get("storageSize", 0)
 
-        await message.reply_text(
+        await safe_api_call(
+            message.reply_text(
             f"👤 Total auth users: <b>{total_auth_users}/{total_users}</b>\n"
             f"📁 Total files: <b>{total_files}</b>\n"
             f"💾 Files size: <b>{human_readable_size(total_storage)}</b>\n"
             f"📊 Database storage used: <b>{db_storage / (1024 * 1024):.2f} MB</b>",
+            )
         )
     except Exception as e:
         await message.reply_text(f"⚠️ An error occurred while fetching stats:\n<code>{e}</code>")
+
+@bot.on_message(filters.private & filters.command("tmdb") & filters.user(OWNER_ID))
+async def tmdb_command(client, message):
+    try:
+        if len(message.command) < 2:
+            await safe_api_call(message.reply_text("Usage: /tmdb tmdb_link"))
+            return
+
+        tmdb_link = message.command[1]
+        type, id = await extract_tmdb_link(tmdb_link)
+        result = await get_by_id(type, id)
+        poster_url = result.get('poster_url')
+        trailer = result.get('trailer_url')
+        info = result.get('message')
+
+        if poster_url:
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
+            await safe_api_call(
+                bot.send_photo(
+                    UPDATE_CHANNEL_ID,
+                    photo=poster_url,
+                    caption=info,
+                    parse_mode=enums.ParseMode.HTML,
+                    reply_markup=keyboard
+                )
+            )
+    except Exception as e:
+        logging.exception("Error in tmdb_command")
+        await safe_api_call(message.reply_text(f"Error in tmdb command: {e}"))
+
+# *-------------------------------------------------------- INLINE SEARCH ---------------------------------------------------------*
+@bot.on_inline_query()
+async def tmdb_inline_search(client, inline_query):
+    query = inline_query.query.strip()
+    results = []
+
+    if not query:
+        await inline_query.answer([], cache_time=1)
+        return
+
+    url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            data = await resp.json()
+            for result in data.get("results", [])[:20]:
+                tmdb_id = result.get("id")
+                tmdb_type = result.get("media_type")
+                if tmdb_type not in ["movie", "tv"]:
+                    continue
+                title = result.get("title") or result.get("name")
+                year = (result.get("release_date") or result.get("first_air_date") or "")[:4]
+                poster_path = result.get("poster_path")
+                poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
+
+                # The id field must be unique per result
+                results.append(
+                    InlineQueryResultArticle(
+                        id=f"{tmdb_type}_{tmdb_id}",
+                        title=f"{title} ({year})" if year else title,
+                        description=tmdb_type.title(),
+                        thumb_url=poster_url,
+                        input_message_content=InputTextMessageContent(
+                            message_text=f"/tmdbinfo {tmdb_type} {tmdb_id}",
+                            parse_mode=enums.ParseMode.HTML
+                        )
+                    )
+                )
+
+    await inline_query.answer(results, cache_time=3)
+
+@bot.on_message(filters.command("tmdbinfo"))
+async def tmdbinfo_command(client, message):
+    try:
+        parts = message.text.split()
+        if len(parts) < 3:
+            await message.reply_text("Usage: /tmdbinfo <movie|tv> <id>")
+            return
+        tmdb_type = parts[1]
+        tmdb_id = parts[2]
+        await get_info(tmdb_type, tmdb_id)
+    except Exception as e:
+        await message.reply_text(f"Error: {e}")
+
+
 
 # =========================
 # Main Entrypoint

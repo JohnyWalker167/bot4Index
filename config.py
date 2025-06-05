@@ -44,12 +44,15 @@ API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 OWNER_ID = int(os.getenv('OWNER_ID'))
 BOT_USERNAME = os.getenv('BOT_USERNAME')
+UPDATE_CHANNEL_ID = int(os.getenv('UPDATE_CHANNEL_ID'))
 
 MY_DOMAIN = os.getenv('MY_DOMAIN')
 
 TOKEN_VALIDITY_SECONDS = 24 * 60 * 60  # 24 hours
 
 MONGO_URI = os.getenv("MONGO_URI")
+
+TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 
 #SHORTERNER API
 URLSHORTX_API_TOKEN = os.getenv('URLSHORTX_API_TOKEN')

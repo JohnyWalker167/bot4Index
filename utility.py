@@ -7,7 +7,6 @@ from datetime import datetime, timezone, timedelta
 from pyrogram.errors import FloodWait
 from config import logger
 
-
 from db import (
     allowed_channels_col,
     users_col,
@@ -215,6 +214,24 @@ async def delete_after_delay(client, chat_id, msg_id):
     except Exception:
         pass
 
+async def extract_tmdb_link(tmdb_url):
+    movie_pattern = r'themoviedb\.org\/movie\/(\d+)'
+    tv_pattern = r'themoviedb\.org\/tv\/(\d+)'
+    collection_pattern = r'themoviedb\.org\/collection\/(\d+)'
+    
+    if re.search(movie_pattern, tmdb_url):
+        tmdb_type = 'movie'
+        tmdb_id = int(re.search(movie_pattern, tmdb_url).group(1))
+    elif re.search(tv_pattern, tmdb_url):
+        tmdb_type = 'tv'
+        tmdb_id = int(re.search(tv_pattern, tmdb_url).group(1)) 
+    elif re.search(collection_pattern, tmdb_url):
+        tmdb_type = 'collection'
+        tmdb_id = int(re.search(collection_pattern, tmdb_url).group(1)) 
+    return tmdb_type, tmdb_id
+
+
+        
 # =========================
 # Queue System for File Processing
 # =========================
