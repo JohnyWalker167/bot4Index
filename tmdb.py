@@ -135,7 +135,9 @@ async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
             release_date_fmt = release_date
 
         message = (
-            f"<b>🏷️Title:</b> {title} : {season} {episode}\n"
+            f"<b>🏷️Title:</b> {title}\n"
+            f"<b>📺Season:<b> {season}\n" if season else ""
+            f"<b>📺Episode:<b> {season}\n" if episode else ""
             f"<b>🌟Rating:</b> {rating} / 10\n" if rating else ""
         )
         # No duration for TV
