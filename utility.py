@@ -317,7 +317,7 @@ async def file_queue_worker(bot):
                     logger.error(f"Error processing TMDB info:{e}")
                     if reply_func:
                         await safe_api_call(reply_func(
-                            f"❌ Error processing TMDB info:<code>{file_info["file_name"]}</code>\n\n{e}"))   
+                            f'❌ Error processing TMDB info:<code>{file_info["file_name"]}</code>\n\n{e}'))   
         except Exception as e:
             if reply_func:
                 await safe_api_call(reply_func(f"❌ Error saving file: {e}"))
