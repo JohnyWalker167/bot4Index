@@ -4,7 +4,7 @@ from config import TMDB_API_KEY
 
 POSTER_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
-async def get_by_id(tmdb_type, tmdb_id):
+async def get_by_id(tmdb_type, tmdb_id, season, episode):
     api_url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US"
     tmdb_movie_image_url = f'https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}/images?api_key={TMDB_API_KEY}&language=en-US&include_image_language=en,hi'
     try:
@@ -14,7 +14,7 @@ async def get_by_id(tmdb_type, tmdb_id):
                 async with session.get(tmdb_movie_image_url) as movie_response:
                     movie_images = await movie_response.json()
                 
-                message = await format_tmdb_info(tmdb_type, tmdb_id, data)
+                message = await format_tmdb_info(tmdb_type, tmdb_id, data, season, episode)
 
                 poster_path = data.get('poster_path', None)
                 if 'backdrops' in movie_images and movie_images['backdrops']:
@@ -58,7 +58,7 @@ def get_imdb_details(imdb_id):
         "stars": ", ".join([a['name'] for a in movie.get('cast', [])[:5]])
     }
 
-async def format_tmdb_info(tmdb_type, movie_id, data):
+async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
     cast_crew = await get_cast_and_crew(tmdb_type, movie_id)
     genres = " ".join([f"#{genre['name'].replace(' ', '').replace('-', '').replace('&', '')}" for genre in data.get('genres', [])])
 
@@ -135,7 +135,7 @@ async def format_tmdb_info(tmdb_type, movie_id, data):
             release_date_fmt = release_date
 
         message = (
-            f"<b>🏷️Title:</b> {title}\n"
+            f"<b>🏷️Title:</b> {title} : {season} {episode}\n"
             f"<b>🌟Rating:</b> {rating} / 10\n" if rating else ""
         )
         # No duration for TV

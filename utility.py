@@ -236,24 +236,34 @@ async def extract_tmdb_link(tmdb_url):
 
 async def extract_movie_info(caption):
     try:
-        current_year = datetime.datetime.now().year + 2  # Allow a couple of years ahead for upcoming movies
+        # Extract season and episode (e.g., S01, S02, E01, E02)
+        season_match = re.search(r'\bS(\d{1,2})\b', caption, re.IGNORECASE)
+        episode_match = re.search(r'\bE(\d{1,2})\b', caption, re.IGNORECASE)
+
+        season = f"S{int(season_match.group(1)):02d}" if season_match else None
+        episode = f"E{int(episode_match.group(1)):02d}" if episode_match else None
+
+        current_year = datetime.now().year + 2  # Allow a couple of years ahead for upcoming movies
         # Exclude 4-digit numbers followed by 'p' (like 1080p, 2160p, 720p)
         years = [
             y for y in re.findall(r'(\d{4})', caption)
             if 1900 <= int(y) <= current_year and not re.search(rf'{y}p', caption, re.IGNORECASE)
         ]
-        if years:
-            release_year = years[-1]  # Take the last valid year
-            # Get everything before the last year
+        release_year = years[-1] if years else None
+
+        # Get everything before the last year
+        if release_year:
             movie_name = caption.rsplit(release_year, 1)[0]
-            # Replace '.' and remove '(' and ')' from movie_name
             movie_name = movie_name.replace('.', ' ').replace('(', '').replace(')', '').strip()
-            # Take the part before "A K A" if present
             movie_name = re.split(r'\s*A\s*K\s*A\s*', movie_name, flags=re.IGNORECASE)[0].strip()
-            return movie_name, release_year
+        else:
+            movie_name = caption
+
+        # Return all info separately
+        return movie_name, release_year, season, episode
     except Exception as e:
-        print(e)
-    return None, None
+        logger.error(f"Extract Movie info Error : {e}")
+    return None, None, None, None
 
         
 # =========================
@@ -283,10 +293,10 @@ async def file_queue_worker(bot):
 
                 try:
                     if str(file_info["channel_id"]) not in EXCLUDE_CHANNEL_ID:
-                        title, release_year  = await extract_movie_info(file_info["file_name"])
+                        title, release_year, season, episode = await extract_movie_info(file_info["file_name"])
                         result = await get_by_name(title, release_year)
                         tmdb_id, tmdb_type = result['id'], result['media_type'] 
-                        results = await get_by_id(tmdb_type, tmdb_id)
+                        results = await get_by_id(tmdb_type, tmdb_id, season, episode)
                         poster_url = results.get('poster_url')
                         trailer = results.get('trailer_url')
                         info = results.get('message')
