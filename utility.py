@@ -17,7 +17,8 @@ from db import (
     files_col,
 )
 from config import (SHORTERNER_URL, URLSHORTX_API_TOKEN, 
-                    UPDATE_CHANNEL_ID, EXCLUDE_CHANNEL_ID)
+                    UPDATE_CHANNEL_ID, EXCLUDE_CHANNEL_ID,
+                    LOG_CHANNEL_ID)
 from tmdb import get_by_name, get_by_id
 
 # =========================
@@ -283,11 +284,15 @@ async def file_queue_worker(bot):
                 "file_name": file_info["file_name"]
             })
             if existing:
-                telegram_link = generate_c_link(existing["channel_id"], existing["message_id"])
+                telegram_link = generate_c_link(file_info["channel_id"], file_info["message_id"])
                 if reply_func:
-                    await safe_api_call(reply_func(
-                        f"⚠️ A file with this name is already indexed.\nLink: {telegram_link}"
-                    ))
+                    await safe_api_call(
+                        bot.send_message(
+                            LOG_CHANNEL_ID,
+                            f"⚠️ Duplicate File.\nLink: {telegram_link}",
+                            parse_mode=enums.ParseMode.HTML
+                        )
+                    )
             else:
                 upsert_file_info(file_info)
 
@@ -316,8 +321,13 @@ async def file_queue_worker(bot):
                 except Exception as e:
                     logger.error(f"Error processing TMDB info:{e}")
                     if reply_func:
-                        await safe_api_call(reply_func(
-                            f'❌ Error processing TMDB info:<code>{file_info["file_name"]}</code>\n\n{e}'))   
+                        await safe_api_call(
+                            bot.send_message(
+                                LOG_CHANNEL_ID,
+                                f'❌ Error processing TMDB info: {file_info["file_name"]}/n/n{e}',
+                                parse_mode=enums.ParseMode.HTML
+                            )
+                        )
         except Exception as e:
             if reply_func:
                 await safe_api_call(reply_func(f"❌ Error saving file: {e}"))

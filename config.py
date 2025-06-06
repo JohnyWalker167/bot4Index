@@ -15,9 +15,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-logging.getLogger("uvicorn").setLevel(logging.ERROR)
-logging.getLogger("uvicorn.error").setLevel(logging.ERROR)
-logging.getLogger("uvicorn.access").setLevel(logging.ERROR)
 logger = logging.getLogger("sharing_bot")
 
 CONFIG_FILE_URL = environ.get('CONFIG_FILE_URL')
@@ -46,6 +43,7 @@ OWNER_ID = int(os.getenv('OWNER_ID'))
 BOT_USERNAME = os.getenv('BOT_USERNAME')
 UPDATE_CHANNEL_ID = int(os.getenv('UPDATE_CHANNEL_ID'))
 EXCLUDE_CHANNEL_ID = os.getenv('EXCLUDE_CHANNEL_ID', '').split(',')
+LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID'))
 
 MY_DOMAIN = os.getenv('MY_DOMAIN')
 

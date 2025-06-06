@@ -263,9 +263,15 @@ async def delete_file_handler(client, message: Message):
 async def restart(client, message):
     """
     Handles the /restart command for the owner.
-    - Restarts the bot by running update.py and re-executing bot.py.
+    - Deletes the log file, runs update.py, and restarts the bot.
     """
-    os.system("python3 update.py")  
+    log_file = "bot_log.txt"
+    if os.path.exists(log_file):
+        try:
+            os.remove(log_file)
+        except Exception as e:
+            await safe_api_call(message.reply_text(f"Failed to delete log file: {e}"))
+    os.system("python3 update.py")
     os.execl(sys.executable, sys.executable, "bot.py")
 
 @bot.on_message(filters.command("addchannel") & filters.user(OWNER_ID))
