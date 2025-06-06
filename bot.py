@@ -393,12 +393,12 @@ async def tmdb_command(client, message):
 
         tmdb_link = message.command[1]
         type, id = await extract_tmdb_link(tmdb_link)
+        season = None
+        episode = None
         result = await get_by_id(type, id, season, episode)
         poster_url = result.get('poster_url')
         trailer = result.get('trailer_url')
         info = result.get('message')
-        season = None
-        episode = None
 
         if poster_url:
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
