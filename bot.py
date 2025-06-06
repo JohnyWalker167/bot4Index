@@ -397,6 +397,8 @@ async def tmdb_command(client, message):
         poster_url = result.get('poster_url')
         trailer = result.get('trailer_url')
         info = result.get('message')
+        season = None
+        episode = None
 
         if poster_url:
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
