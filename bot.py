@@ -393,8 +393,8 @@ async def tmdb_command(client, message):
 
         tmdb_link = message.command[1]
         type, id = await extract_tmdb_link(tmdb_link)
-        season = None
-        episode = None
+        season = message.command[2] if message.command[2] else None
+        episode = message.command[3] if message.command[3] else None
         result = await get_by_id(type, id, season, episode)
         poster_url = result.get('poster_url')
         trailer = result.get('trailer_url')
