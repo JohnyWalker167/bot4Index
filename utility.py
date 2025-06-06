@@ -5,6 +5,8 @@ import uuid
 import requests
 from datetime import datetime, timezone, timedelta
 from pyrogram.errors import FloodWait
+from pyrogram import enums
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import logger
 
 from db import (
@@ -14,7 +16,9 @@ from db import (
     auth_users_col,
     files_col,
 )
-from config import SHORTERNER_URL, URLSHORTX_API_TOKEN
+from config import (SHORTERNER_URL, URLSHORTX_API_TOKEN, 
+                    UPDATE_CHANNEL_ID, EXCLUDE_CHANNEL_ID)
+from tmdb import get_by_name, get_by_id
 
 # =========================
 # Constants & Globals
@@ -230,6 +234,26 @@ async def extract_tmdb_link(tmdb_url):
         tmdb_id = int(re.search(collection_pattern, tmdb_url).group(1)) 
     return tmdb_type, tmdb_id
 
+async def extract_movie_info(caption):
+    try:
+        current_year = datetime.datetime.now().year + 2  # Allow a couple of years ahead for upcoming movies
+        # Exclude 4-digit numbers followed by 'p' (like 1080p, 2160p, 720p)
+        years = [
+            y for y in re.findall(r'(\d{4})', caption)
+            if 1900 <= int(y) <= current_year and not re.search(rf'{y}p', caption, re.IGNORECASE)
+        ]
+        if years:
+            release_year = years[-1]  # Take the last valid year
+            # Get everything before the last year
+            movie_name = caption.rsplit(release_year, 1)[0]
+            # Replace '.' and remove '(' and ')' from movie_name
+            movie_name = movie_name.replace('.', ' ').replace('(', '').replace(')', '').strip()
+            # Take the part before "A K A" if present
+            movie_name = re.split(r'\s*A\s*K\s*A\s*', movie_name, flags=re.IGNORECASE)[0].strip()
+            return movie_name, release_year
+    except Exception as e:
+        print(e)
+    return None, None
 
         
 # =========================
@@ -238,7 +262,7 @@ async def extract_tmdb_link(tmdb_url):
 
 file_queue = asyncio.Queue()
 
-async def file_queue_worker():
+async def file_queue_worker(bot):
     while True:
         item = await file_queue.get()
         file_info, reply_func = item
@@ -256,6 +280,34 @@ async def file_queue_worker():
                     ))
             else:
                 upsert_file_info(file_info)
+
+                try:
+                    if str(file_info["channel_id"]) not in EXCLUDE_CHANNEL_ID:
+                        title, release_year  = await extract_movie_info(file_info["file_name"])
+                        result = await get_by_name(title, release_year)
+                        tmdb_id, tmdb_type = result['id'], result['media_type'] 
+                        results = await get_by_id(tmdb_type, tmdb_id)
+                        poster_url = results.get('poster_url')
+                        trailer = results.get('trailer_url')
+                        info = results.get('message')
+
+                        if poster_url:
+                            keyboard = InlineKeyboardMarkup(
+                                [[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
+                            await safe_api_call(
+                                bot.send_photo(
+                                    UPDATE_CHANNEL_ID,
+                                    photo=poster_url,
+                                    caption=info,
+                                    parse_mode=enums.ParseMode.HTML,
+                                    reply_markup=keyboard
+                                )
+                            )
+                except Exception as e:
+                    logger.error(f"Error processing TMDB info:{e}")
+                    if reply_func:
+                        await safe_api_call(reply_func(
+                            f"❌ Error processing TMDB info:<code>{file_info["file_name"]}</code>\n\n{e}"))   
         except Exception as e:
             if reply_func:
                 await safe_api_call(reply_func(f"❌ Error saving file: {e}"))

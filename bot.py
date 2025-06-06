@@ -407,73 +407,6 @@ async def tmdb_command(client, message):
         logging.exception("Error in tmdb_command")
         await safe_api_call(message.reply_text(f"Error in tmdb command: {e}"))
 
-# *-------------------------------------------------------- INLINE SEARCH ---------------------------------------------------------*
-@bot.on_inline_query()
-async def tmdb_inline_search(client, inline_query):
-    # Restrict inline search to OWNER_ID only
-    if inline_query.from_user.id != OWNER_ID:
-        await inline_query.answer([], cache_time=1, switch_pm_text="Owner only", switch_pm_parameter="start")
-        return
-
-    query = inline_query.query.strip()
-    results = []
-
-    if not query:
-        await inline_query.answer([], cache_time=1)
-        return
-
-    url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={query}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            data = await resp.json()
-            for result in data.get("results", [])[:20]:
-                tmdb_id = result.get("id")
-                tmdb_type = result.get("media_type")
-                if tmdb_type not in ["movie", "tv"]:
-                    continue
-                title = result.get("title") or result.get("name")
-                year = (result.get("release_date") or result.get("first_air_date") or "")[:4]
-                poster_path = result.get("poster_path")
-                poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
-
-                # Construct TMDB link
-                if tmdb_type == "movie":
-                    tmdb_link = f"https://www.themoviedb.org/movie/{tmdb_id}"
-                elif tmdb_type == "tv":
-                    tmdb_link = f"https://www.themoviedb.org/tv/{tmdb_id}"
-                else:
-                    continue
-
-                # The id field must be unique per result
-                results.append(
-                    InlineQueryResultArticle(
-                        id=f"{tmdb_type}_{tmdb_id}",
-                        title=f"{title} ({year})" if year else title,
-                        description=tmdb_type.title(),
-                        thumb_url=poster_url,
-                        input_message_content=InputTextMessageContent(
-                            message_text=f"/tmdb {tmdb_link}",
-                            parse_mode=enums.ParseMode.HTML
-                        )
-                    )
-                )
-
-    await inline_query.answer(results, cache_time=3)
-
-@bot.on_message(filters.command("tmdbinfo"))
-async def tmdbinfo_command(client, message):
-    try:
-        parts = message.text.split()
-        if len(parts) < 3:
-            await message.reply_text("Usage: /tmdbinfo <movie|tv> <id>")
-            return
-        tmdb_type = parts[1]
-        tmdb_id = parts[2]
-        await get_info(tmdb_type, tmdb_id)
-    except Exception as e:
-        await message.reply_text(f"Error: {e}")
-
-
 
 # =========================
 # Main Entrypoint
@@ -485,7 +418,7 @@ async def main():
     """
     await bot.start()
     bot.loop.create_task(start_fastapi())
-    bot.loop.create_task(file_queue_worker())  # Start the queue worker
+    bot.loop.create_task(file_queue_worker(bot))  # Start the queue worker
 
 async def start_fastapi():
     """

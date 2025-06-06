@@ -45,6 +45,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 OWNER_ID = int(os.getenv('OWNER_ID'))
 BOT_USERNAME = os.getenv('BOT_USERNAME')
 UPDATE_CHANNEL_ID = int(os.getenv('UPDATE_CHANNEL_ID'))
+EXCLUDE_CHANNEL_ID = os.getenv('EXCLUDE_CHANNEL_ID', '').split(',')
 
 MY_DOMAIN = os.getenv('MY_DOMAIN')
 

@@ -11,10 +11,16 @@ async def get_by_id(tmdb_type, tmdb_id):
         async with aiohttp.ClientSession() as session:
             async with session.get(api_url) as detail_response:
                 data = await detail_response.json()
+                async with session.get(tmdb_movie_image_url) as movie_response:
+                    movie_images = await movie_response.json()
                 
                 message = await format_tmdb_info(tmdb_type, tmdb_id, data)
 
                 poster_path = data.get('poster_path', None)
+                if 'backdrops' in movie_images and movie_images['backdrops']:
+                    poster_path = movie_images['backdrops'][0]['file_path']
+                elif 'posters' in movie_images and movie_images['posters']:
+                    poster_path = movie_images['posters'][0]['file_path']
                 if poster_path:
                         poster_url = f"https://image.tmdb.org/t/p/original{poster_path}" if poster_path else None
 
