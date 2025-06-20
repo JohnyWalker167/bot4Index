@@ -62,7 +62,6 @@ async def api_channel_files(
             "file_name": file.get("file_name"),
             "file_size": file.get("file_size"),
             "file_format": file.get("file_format"),
-            "date": file.get("date").strftime('%Y-%m-%d %H:%M:%S') if file.get("date") else "",
             "telegram_link": file.get("telegram_link")
         }
 

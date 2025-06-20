@@ -171,7 +171,6 @@ def extract_file_info(message, channel_id=None):
         "file_name": None,
         "file_size": None,
         "file_format": None,
-        "date": message.date.replace(tzinfo=timezone.utc) if getattr(message, "date", None) else datetime.now(timezone.utc)
     }
     if message.document:
         file_info["file_name"] = caption_name or message.document.file_name

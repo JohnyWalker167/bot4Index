@@ -85,13 +85,15 @@ async def start_handler(client, message):
             })
             token_id = token_doc["token_id"] if token_doc else generate_token(user_id)
             short_link = shorten_url(get_token_link(token_id, bot_username))
-            await safe_api_call(message.reply_text(
+            reply = await safe_api_call(message.reply_text(
                 "❌ You are not authorized\n"
                 "Please use this link to get access for 24 hours:",
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("Get Access Link", url=short_link)]]
                 )
             ))
+            bot.loop.create_task(delete_after_delay(client, reply.chat.id, reply.id))
+
             return
 
         # Limit file access per session

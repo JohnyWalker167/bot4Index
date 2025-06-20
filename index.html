@@ -221,7 +221,6 @@ function renderFiles(files) {
             <td class="text-break">${file.file_name || ''}</td>
             <td>${humanFileSize(file.file_size) || ''}</td>
             <td>${file.file_format || ''}</td>
-            <td>${file.date || ''}</td>
             <td>
                 <a class="btn btn-success btn-sm" href="${file.telegram_link}" target="_blank">Send</a>
             </td>
@@ -236,7 +235,6 @@ function renderFiles(files) {
             <div class="file-name">${file.file_name || ''}</div>
             <div class="file-meta"><span>Size:</span><span>${humanFileSize(file.file_size) || ''}</span></div>
             <div class="file-meta"><span>Format:</span><span>${file.file_format || ''}</span></div>
-            <div class="file-meta"><span>Date:</span><span>${file.date || ''}</span></div>
             <div class="file-link"><a class="btn btn-success btn-sm" href="${file.telegram_link}" target="_blank">Send</a></div>
         `;
         mobileList.appendChild(div);
