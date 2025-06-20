@@ -133,7 +133,6 @@ def shorten_url(long_url):
     Shorten a URL using the configured shortener service.
     Returns the original URL if shortening fails.
     """
-    logger.info(f"Shortening URL: {long_url}")
     try:
         resp = requests.get(
             f"https://{SHORTERNER_URL}/api?api={URLSHORTX_API_TOKEN}&url={long_url}",
@@ -142,7 +141,6 @@ def shorten_url(long_url):
         if resp.status_code == 200:
             data = resp.json()
             if data.get("status") == "success" and data.get("shortenedUrl"):
-                logger.info(f"Shortened URL: {data['shortenedUrl']}")
                 return data["shortenedUrl"]
         logger.warning(f"Failed to shorten URL, status code: {resp.status_code}")
         return long_url
