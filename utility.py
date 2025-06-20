@@ -361,20 +361,20 @@ async def queue_file_for_processing(message, channel_id=None, reply_func=None):
         if reply_func:
             await safe_api_call(reply_func(f"❌ Error queuing file: {e}"))
 
-async def delete_expired_auth_users():
+def delete_expired_auth_users():
     """
     Delete expired auth users from auth_users_col using 'expiry' field.
     """
     now = datetime.now(timezone.utc)
-    result = await auth_users_col.delete_many({"expiry": {"$lt": now}})
+    result = auth_users_col.delete_many({"expiry": {"$lt": now}})
     logger.info(f"Deleted {result.deleted_count} expired auth users.")
 
-async def delete_expired_tokens():
+def delete_expired_tokens():
     """
     Delete expired tokens from tokens_col using 'expiry' field.
     """
     now = datetime.now(timezone.utc)
-    result = await tokens_col.delete_many({"expiry": {"$lt": now}})
+    result = tokens_col.delete_many({"expiry": {"$lt": now}})
     logger.info(f"Deleted {result.deleted_count} expired tokens.")
 
 async def periodic_expiry_cleanup(interval_seconds=3600 * 4):
@@ -382,6 +382,6 @@ async def periodic_expiry_cleanup(interval_seconds=3600 * 4):
     Periodically delete expired auth users and tokens.
     """
     while True:
-        await delete_expired_auth_users()
-        await delete_expired_tokens()
-        await asyncio.sleep(interval_seconds)
+        delete_expired_auth_users()
+        delete_expired_tokens()
+        asyncio.sleep(interval_seconds)
