@@ -1,26 +1,21 @@
+import re
 import aiohttp
 import imdb
-from config import TMDB_API_KEY
+from config import TMDB_API_KEY, logger
 
 POSTER_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
 async def get_by_id(tmdb_type, tmdb_id, season, episode):
     api_url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US"
-    tmdb_movie_image_url = f'https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}/images?api_key={TMDB_API_KEY}&language=en-US&include_image_language=en,hi'
+    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(api_url) as detail_response:
                 data = await detail_response.json()
-                async with session.get(tmdb_movie_image_url) as movie_response:
-                    movie_images = await movie_response.json()
                 
                 message = await format_tmdb_info(tmdb_type, tmdb_id, data, season, episode)
 
                 poster_path = data.get('poster_path', None)
-                if 'backdrops' in movie_images and movie_images['backdrops']:
-                    poster_path = movie_images['backdrops'][0]['file_path']
-                elif 'posters' in movie_images and movie_images['posters']:
-                    poster_path = movie_images['posters'][0]['file_path']
                 if poster_path:
                         poster_url = f"https://image.tmdb.org/t/p/original{poster_path}" if poster_path else None
 
@@ -47,36 +42,29 @@ def get_imdb_details(imdb_id):
         return {}
 
     return {
-        "title": movie.get('title'),
         "rating": movie.get('rating'),
-        "duration": movie.get('runtime', [None])[0],
-        "language": ", ".join(movie.get('languages', [])),
-        "genre": ", ".join(movie.get('genres', [])),
-        "release_date": movie.get('original air date') or movie.get('year'),
-        "story": movie.get('plot', [None])[0],
-        "director": ", ".join([d['name'] for d in movie.get('director', [])]),
-        "stars": ", ".join([a['name'] for a in movie.get('cast', [])[:5]])
+        "plot": movie.get('plot', [None])[0]
     }
 
 async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
     cast_crew = await get_cast_and_crew(tmdb_type, movie_id)
-    genres = " ".join([f"#{genre['name'].replace(' ', '').replace('-', '').replace('&', '')}" for genre in data.get('genres', [])])
 
     if tmdb_type == 'movie':
         imdb_id = data.get('imdb_id')
         imdb_info = get_imdb_details(imdb_id) if imdb_id else {}
 
-        title = imdb_info.get('title') or data.get('title')
-        rating = imdb_info.get('rating')
-        duration = format_duration(imdb_info.get('duration'))
-        language = imdb_info.get('language')
-        genre = imdb_info.get('genre')
-        genre_tags = genre_to_tags(genre)
-        release_date = imdb_info.get('release_date') or (data.get('release_date', '')[:10] if data.get('release_date') else "")
-        release_date = str(release_date) if release_date is not None else ""
-        summary = imdb_info.get('story') or truncate_overview(data.get('overview'))
-        director = imdb_info.get('director') or (cast_crew.get('director') if cast_crew.get('director') else None)
-        starring = imdb_info.get('stars') or (", ".join(cast_crew.get('starring', [])) if cast_crew.get('starring') else None)
+        # Only plot from IMDbPY
+        plot = imdb_info.get('plot')
+
+        # All other details from TMDb
+        title = data.get('title')
+        duration = format_duration(data.get('runtime'))
+        language = ", ".join(data.get('spoken_languages', [{}])[0].get('english_name', '') for _ in data.get('spoken_languages', []))
+        genre = extract_genres(data)
+        genre_tags = " ".join([genre_tag_with_emoji(g) for g in genre])
+        release_date = data.get('release_date', '')[:10] if data.get('release_date') else ""
+        director = cast_crew.get('director')
+        starring = ", ".join(cast_crew.get('starring', [])) if cast_crew.get('starring') else None
 
         # Format release date
         if release_date and len(release_date) == 10:
@@ -88,19 +76,20 @@ async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         else:
             release_date_fmt = release_date
 
-        # Build the message
+        # Rename fields as needed
         message = (
-            f"<b>🏷️Title:</b> {title}\n"
-            f"<b>🌟Rating:</b> {rating} / 10\n" if rating else ""
+            f"<b>🎬 Name:</b> {title}\n"
         )
-        message += f"<b>⏳️Duration:</b> {duration}\n" if duration else ""
-        message += f"<b>🅰️Language:</b> {language}\n" if language else ""
-        message += f"<b>⚙️Genre:</b> {genre_tags}\n" if genre_tags else ""
-        message += f"<b>📆Release:</b> {release_date_fmt}\n" if release_date_fmt else ""
+        message += f"<b>⏱️ Length:</b> {duration}\n" if duration else ""
+        message += f"<b>🌐 Language:</b> {language}\n" if language else ""
+        message += f"<b>🏷️ Genres:</b> {genre_tags}\n" if genre_tags else ""
+        message += f"<b>📅 Released:</b> {release_date_fmt}\n" if release_date_fmt else ""
         message += "\n"
-        message += f"<b>📝Story:</b> {summary}\n" if summary else ""
-        message += f"<b>Directors:</b>  {director}\n" if director else ""
-        message += f"<b>Stars:</b>  {starring}\n" if starring else ""
+        message += f"<b>📝 Plot:</b> {plot}\n" if plot else ""
+        message += "\n"
+
+        message += f"<b>🎬 Director:</b> {director}\n" if director else ""
+        message += f"<b>⭐ Cast:</b> {starring}\n" if starring else ""
 
         return message.strip()
 
@@ -108,23 +97,17 @@ async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         imdb_id = await get_tv_imdb_id(movie_id)
         imdb_info = get_imdb_details(imdb_id) if imdb_id else {}
 
-        title = imdb_info.get('title') or data.get('name')
-        rating = imdb_info.get('rating') or data.get('vote_average')
-        # duration removed for TV
-        language = imdb_info.get('language') or (", ".join(data.get('languages', [])) if data.get('languages') else "")
-        genre = imdb_info.get('genre') or ", ".join([g['name'] for g in data.get('genres', [])])
-        genre_tags = genre_to_tags(genre)
-        release_date = imdb_info.get('release_date') or (data.get('first_air_date', '')[:10] if data.get('first_air_date') else "")
-        release_date = str(release_date) if release_date is not None else ""
-        summary = imdb_info.get('story') or truncate_overview(data.get('overview'))
-        director = imdb_info.get('director') or (
-            ", ".join([creator['name'] for creator in data.get('created_by', [])]) if data.get('created_by') else None
-        )
-        starring = imdb_info.get('stars') or (
-            ", ".join(cast_crew.get('starring', [])) if cast_crew.get('starring') else None
-        )
+        # Use IMDb plot if available, else fallback to TMDb overview
+        plot = imdb_info.get('plot') if imdb_info.get('plot') else data.get('overview')
 
-        # Format release date
+        title = data.get('name')
+        language = ", ".join(data.get('languages', [])) if data.get('languages') else ""
+        genre = extract_genres(data)
+        genre_tags = " ".join([genre_tag_with_emoji(g) for g in genre])
+        release_date = data.get('first_air_date', '')[:10] if data.get('first_air_date') else ""
+        director = ", ".join([creator['name'] for creator in data.get('created_by', [])]) if data.get('created_by') else None
+        starring = ", ".join(cast_crew.get('starring', [])) if cast_crew.get('starring') else None
+
         if release_date and len(release_date) == 10:
             from datetime import datetime
             try:
@@ -135,56 +118,20 @@ async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
             release_date_fmt = release_date
 
         message = (
-            f"<b>🏷️Title:</b> {title}\n"
-            f"<b>📺Season:<b> {season}\n" if season else ""
-            f"<b>📺Episode:<b> {season}\n" if episode else ""
-            f"<b>🌟Rating:</b> {rating} / 10\n" if rating else ""
+            f"<b>🎬 Name:</b> {title}\n"
+            f"<b>📺 Season:</b> {season}\n" if season else ""
+            f"<b>📺 Episode:</b> {episode}\n" if episode else ""
         )
-        # No duration for TV
-        message += f"<b>🅰️Language:</b> {language}\n" if language else ""
-        message += f"<b>⚙️Genre:</b> {genre_tags}\n" if genre_tags else ""
-        message += f"<b>📆Release:</b> {release_date_fmt}\n" if release_date_fmt else ""
+        message += f"<b>🌐 Language:</b> {language}\n" if language else ""
+        message += f"<b>🏷️ Genres:</b> {genre_tags}\n" if genre_tags else ""
+        message += f"<b>📅 Released:</b> {release_date_fmt}\n" if release_date_fmt else ""
         message += "\n"
-        message += f"<b>📝Story:</b> {summary}\n" if summary else ""
-        message += f"<b>Directors:</b>  {director}\n" if director else ""
-        message += f"<b>Stars:</b>  {starring}\n" if starring else ""
+        message += f"<b>📝 Plot:</b> {plot}\n" if plot else ""
+        message += "\n"
+        message += f"<b>🎬 Director:</b> {director}\n" if director else ""
+        message += f"<b>⭐ Cast:</b> {starring}\n" if starring else ""
 
         return message.strip()
-
-    elif tmdb_type == 'collection':
-        title = data.get('name', 'N/A')
-        summary = truncate_overview(data.get('overview', 'N/A'))
-        genre = ", ".join([g['name'] for g in data.get('genres', [])]) if data.get('genres') else ""
-        genre_tags = genre_to_tags(genre)
-        release_date = ""
-        if data.get('parts'):
-            release_dates = [p.get('release_date', '') for p in data['parts'] if p.get('release_date')]
-            if release_dates:
-                release_date = min(release_dates)
-        if release_date and len(release_date) == 10:
-            from datetime import datetime
-            try:
-                release_date_fmt = datetime.strptime(release_date, "%Y-%m-%d").strftime("%b %d, %Y")
-            except Exception:
-                release_date_fmt = release_date
-        else:
-            release_date_fmt = release_date
-
-        movies_list = "\n".join(
-            f"• {movie['title']} ({movie.get('release_date', 'N/A')[:4]})" 
-            for movie in data.get('parts', []) if 'title' in movie
-        )
-
-        message = (
-            f"🏷️Title: {title}\n"
-            f"⚙️Genre: {genre_tags}\n" if genre_tags else ""
-        )
-        message += "\n"
-        message += f"📝Story: {summary}\n" if summary else ""
-        message += f"🎬Movies in this collection:\n{movies_list}" if movies_list else ""
-
-        return message.strip()
-
     else:
         return "Unknown type. Unable to format information."
 
@@ -227,77 +174,83 @@ def truncate_overview(overview):
         return overview[:MAX_OVERVIEW_LENGTH] + "..."
     return overview
 
-async def get_by_name(movie_name, release_year):
-    tmdb_search_url = f'https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={movie_name}'
-
+async def get_movie_by_name(movie_name, release_year=None):
+    tmdb_search_url = f'https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={movie_name}'
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(tmdb_search_url) as search_response:
                 search_data = await search_response.json()
-
-                if search_data['results']:
-                    matching_results = [
-                        result for result in search_data['results']
-                        if ('release_date' in result and result['release_date'][:4] == str(release_year)) or
-                        ('first_air_date' in result and result['first_air_date'][:4] == str(release_year))
-                    ]
-
-                    if matching_results:
-                        result = matching_results[0]
-                        media_type = result['media_type']
-                        tmdb_id = result['id']
-                        
+                if search_data.get('results'):
+                    results = search_data['results']
+                    if release_year:
+                        # Filter by release year if provided
+                        results = [
+                            result for result in results
+                            if 'release_date' in result and result['release_date'] and result['release_date'][:4] == str(release_year)
+                        ]
+                    if results:
+                        result = results[0]
                         return {
-                            "id": tmdb_id,
-                            "media_type": media_type,
+                            "id": result['id'],
+                            "media_type": "movie"
                         }
-
-
-        return None  # No matching results found
-    except Exception as e:
-        print(f"Error fetching TMDb ID: {e}")
         return None
+    except Exception as e:
+        logger.error(f"Error fetching TMDb movie by name: {e}")
+        return
 
-def genre_to_tags(genre):
-    """
-    Convert genre string to emoji-rich hashtag tags.
-    """
-    emoji_map = {
-        "Action": "🥊",
-        "SciFi": "🤖",
-        "Sci-Fi": "🤖",
-        "Science Fiction": "🤖",
-        "Adventure": "🌋",
-        "Drama": "🎭",
-        "Comedy": "😂",
-        "Horror": "👻",
-        "Thriller": "🔪",
-        "Romance": "❤️",
-        "Animation": "🎬",
-        "Crime": "🕵️",
-        "Fantasy": "🧙",
-        "Mystery": "🕵️‍♂️",
-        "Family": "👨‍👩‍👧‍👦",
-        "Biography": "📖",
-        "History": "📜",
-        "War": "⚔️",
-        "Music": "🎵",
-        "Western": "🤠",
-        "Sport": "🏆",
-        "Documentary": "🎥"
-    }
-    tags = []
-    if genre:
-        for g in genre.split(","):
-            g = g.strip()
-            # Normalize Sci-Fi and Science Fiction to SciFi
-            if g in ["Sci-Fi", "Science Fiction"]:
-                tag = "#SciFi 🤖"
-            else:
-                emoji = emoji_map.get(g, "")
-                tag = f"#{g.replace(' ', '')} {emoji}".strip()
-            tags.append(tag)
-    return "  ".join(tags)
+async def get_tv_by_name(tv_name, first_air_year=None):
+    tmdb_search_url = f'https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={tv_name}'
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(tmdb_search_url) as search_response:
+                search_data = await search_response.json()
+                if search_data.get('results'):
+                    results = search_data['results']
+                    if first_air_year:
+                        # Filter by first air year if provided
+                        results = [
+                            result for result in results
+                            if 'first_air_date' in result and result['first_air_date'] and result['first_air_date'][:4] == str(first_air_year)
+                        ]
+                    if results:
+                        result = results[0]
+                        return {
+                            "id": result['id'],
+                            "media_type": "tv"
+                        }
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching TMDb TV by name: {e}")
+        return
+    
+GENRE_EMOJI_MAP = {
+    "Action": "🥊", "Adventure": "🌋", "Animation": "🎬", "Comedy": "😂",
+    "Crime": "🕵️", "Documentary": "🎥", "Drama": "🎭", "Family": "👨‍👩‍👧‍👦",
+    "Fantasy": "🧙", "History": "📜", "Horror": "👻", "Music": "🎵",
+    "Mystery": "🕵️‍♂️", "Romance": "❤️", "ScienceFiction": "🤖",
+    "Sci-Fi": "🤖", "SciFi": "🤖", "TV Movie": "📺", "Thriller": "🔪",
+    "War": "⚔️", "Western": "🤠", "Sport": "🏆", "Biography": "📖"
+}
+
+def clean_genre_name(genre):
+    return re.sub(r'[^A-Za-z0-9]', '', genre)
+
+def genre_tag_with_emoji(genre):
+    clean_name = clean_genre_name(genre)
+    emoji = GENRE_EMOJI_MAP.get(clean_name, "")
+    return f"#{clean_name}{' ' + emoji if emoji else ''}"
+
+def extract_genres(data):
+    genres = []
+    for genre in data.get('genres', []):
+        # Split genre names containing '&' into separate genres
+        if '&' in genre['name']:
+            parts = [g.strip() for g in genre['name'].split('&')]
+            genres.extend(parts)
+        else:
+            genres.append(genre['name'])
+    return genres
 
 def format_duration(duration):
     """

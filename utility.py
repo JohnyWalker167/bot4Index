@@ -19,7 +19,7 @@ from db import (
 from config import (SHORTERNER_URL, URLSHORTX_API_TOKEN, 
                     UPDATE_CHANNEL_ID, EXCLUDE_CHANNEL_ID,
                     LOG_CHANNEL_ID)
-from tmdb import get_by_name, get_by_id
+from tmdb import get_movie_by_name, get_tv_by_name, get_by_id
 
 # =========================
 # Constants & Globals
@@ -299,7 +299,11 @@ async def file_queue_worker(bot):
                 try:
                     if str(file_info["channel_id"]) not in EXCLUDE_CHANNEL_ID:
                         title, release_year, season, episode = await extract_movie_info(file_info["file_name"])
-                        result = await get_by_name(title, release_year)
+                        if season:
+                            result = await get_movie_by_name(title, release_year)
+                        else:
+                            result = await get_tv_by_name(title, release_year)
+
                         tmdb_id, tmdb_type = result['id'], result['media_type'] 
                         results = await get_by_id(tmdb_type, tmdb_id, season, episode)
                         poster_url = results.get('poster_url')
