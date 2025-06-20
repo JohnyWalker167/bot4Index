@@ -140,7 +140,8 @@ def shorten_url(long_url):
             if data.get("status") == "success" and data.get("shortenedUrl"):
                 return data["shortenedUrl"]
         return long_url
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error shortening URL: {e}")
         return long_url
 
 # =========================
@@ -182,6 +183,8 @@ def extract_file_info(message, channel_id=None):
         file_info["file_name"] = caption_name or "photo.jpg"
         file_info["file_size"] = getattr(message.photo, "file_size", None)
         file_info["file_format"] = "image/jpeg"
+    if file_info["file_name"]:
+        file_info["file_name"] = remove_extension(file_info["file_name"])
     return file_info
 
 def human_readable_size(size):
@@ -190,6 +193,15 @@ def human_readable_size(size):
             return f"{size:.2f} {unit}"
         size /= 1024
     return f"{size:.2f} PB"
+
+def remove_extension(caption):
+    try:
+        # Remove .mkv and .mp4 extensions if present
+        cleaned_caption = re.sub(r'\.mkv|\.mp4|\.webm', '', caption)
+        return cleaned_caption
+    except Exception as e:
+        logger.error(e)
+        return None
 
 def invalidate_channel_cache(channel_id):
     keys_to_delete = [k for k in channel_files_cache if k.startswith(f"{channel_id}:")]
@@ -299,9 +311,9 @@ async def file_queue_worker(bot):
                     if str(file_info["channel_id"]) not in EXCLUDE_CHANNEL_ID:
                         title, release_year, season, episode = await extract_movie_info(file_info["file_name"])
                         if season:
-                            result = await get_movie_by_name(title, release_year)
-                        else:
                             result = await get_tv_by_name(title, release_year)
+                        else:
+                            result = await get_movie_by_name(title, release_year)
 
                         tmdb_id, tmdb_type = result['id'], result['media_type'] 
                         results = await get_by_id(tmdb_type, tmdb_id, season, episode)
