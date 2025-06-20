@@ -129,20 +129,27 @@ def extract_channel_and_msg_id(link):
     raise ValueError("Invalid Telegram message link format. Only /c/ links are supported.")
 
 def shorten_url(long_url):
+    """
+    Shorten a URL using the configured shortener service.
+    Returns the original URL if shortening fails.
+    """
+    logger.info(f"Shortening URL: {long_url}")
     try:
         resp = requests.get(
             f"https://{SHORTERNER_URL}/api?api={URLSHORTX_API_TOKEN}&url={long_url}",
-            timeout=10
+            timeout=5
         )
-        logger.error("Shortener response:", resp.text)  # Add this line for debugging
         if resp.status_code == 200:
             data = resp.json()
             if data.get("status") == "success" and data.get("shortenedUrl"):
+                logger.info(f"Shortened URL: {data['shortenedUrl']}")
                 return data["shortenedUrl"]
+        logger.warning(f"Failed to shorten URL, status code: {resp.status_code}")
         return long_url
     except Exception as e:
+        logger.error(f"Exception while shortening URL: {e}")
         return long_url
-
+    
 # =========================
 # File Utilities
 # =========================
