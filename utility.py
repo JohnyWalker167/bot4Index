@@ -384,4 +384,4 @@ async def periodic_expiry_cleanup(interval_seconds=3600 * 4):
     while True:
         delete_expired_auth_users()
         delete_expired_tokens()
-        asyncio.sleep(interval_seconds)
+        await asyncio.sleep(interval_seconds)
