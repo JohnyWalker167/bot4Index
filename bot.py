@@ -6,7 +6,6 @@ import base64
 import os
 import re
 import sys
-import aiohttp
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -22,13 +21,12 @@ from utility import (
     safe_api_call, get_allowed_channels, invalidate_channel_cache,
     delete_after_delay, human_readable_size,
     queue_file_for_processing, file_queue_worker,
-    file_queue, extract_tmdb_link
+    file_queue, extract_tmdb_link, periodic_expiry_cleanup
 )
 from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
 from fast_api import api
 from tmdb import get_by_id
 import logging
-from pyrogram.types import InlineQueryResultArticle, InputTextMessageContent
 
 # =========================
 # Constants & Globals
@@ -427,6 +425,13 @@ async def main():
     await bot.start()
     bot.loop.create_task(start_fastapi())
     bot.loop.create_task(file_queue_worker(bot))  # Start the queue worker
+    bot.loop.create_task(periodic_expiry_cleanup())
+
+    # Send startup message to log channel
+    try:
+        await bot.send_message(LOG_CHANNEL_ID, "✅ Bot started and FastAPI server running.")
+    except Exception as e:
+        print(f"Failed to send startup message to log channel: {e}")
 
 async def start_fastapi():
     """

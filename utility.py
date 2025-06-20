@@ -129,19 +129,18 @@ def extract_channel_and_msg_id(link):
     raise ValueError("Invalid Telegram message link format. Only /c/ links are supported.")
 
 def shorten_url(long_url):
-    """Shorten a URL using the configured shortener."""
     try:
         resp = requests.get(
             f"https://{SHORTERNER_URL}/api?api={URLSHORTX_API_TOKEN}&url={long_url}",
-            timeout=5
+            timeout=10
         )
+        logger.error("Shortener response:", resp.text)  # Add this line for debugging
         if resp.status_code == 200:
             data = resp.json()
             if data.get("status") == "success" and data.get("shortenedUrl"):
                 return data["shortenedUrl"]
         return long_url
     except Exception as e:
-        logger.error(f"Error shortening URL: {e}")
         return long_url
 
 # =========================
@@ -361,3 +360,28 @@ async def queue_file_for_processing(message, channel_id=None, reply_func=None):
     except Exception as e:
         if reply_func:
             await safe_api_call(reply_func(f"❌ Error queuing file: {e}"))
+
+async def delete_expired_auth_users():
+    """
+    Delete expired auth users from auth_users_col using 'expiry' field.
+    """
+    now = datetime.now(timezone.utc)
+    result = await auth_users_col.delete_many({"expiry": {"$lt": now}})
+    logger.info(f"Deleted {result.deleted_count} expired auth users.")
+
+async def delete_expired_tokens():
+    """
+    Delete expired tokens from tokens_col using 'expiry' field.
+    """
+    now = datetime.now(timezone.utc)
+    result = await tokens_col.delete_many({"expiry": {"$lt": now}})
+    logger.info(f"Deleted {result.deleted_count} expired tokens.")
+
+async def periodic_expiry_cleanup(interval_seconds=3600 * 4):
+    """
+    Periodically delete expired auth users and tokens.
+    """
+    while True:
+        await delete_expired_auth_users()
+        await delete_expired_tokens()
+        await asyncio.sleep(interval_seconds)
