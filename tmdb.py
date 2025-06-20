@@ -101,7 +101,7 @@ async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         plot = imdb_info.get('plot') if imdb_info.get('plot') else data.get('overview')
 
         title = data.get('name')
-        language = ", ".join(data.get('languages', [])) if data.get('languages') else ""
+        language = ", ".join(lang.get('english_name', '') for lang in data.get('spoken_languages', [])) if data.get('spoken_languages') else ""
         genre = extract_genres(data)
         genre_tags = " ".join([genre_tag_with_emoji(g) for g in genre])
         release_date = data.get('first_air_date', '')[:10] if data.get('first_air_date') else ""
@@ -266,7 +266,7 @@ def format_duration(duration):
 
 async def get_tv_imdb_id(tv_id):
     url = f"https://api.themoviedb.org/3/tv/{tv_id}/external_ids?api_key={TMDB_API_KEY}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            data = await resp.json()
+        async with session.get(url) as resp:ssion:
+            data = await resp.json()as resp:
+            return data.get("imdb_id")
             return data.get("imdb_id")
