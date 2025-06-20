@@ -263,10 +263,10 @@ def format_duration(duration):
         return f"{hours}h {mins:02d}min" if hours else f"{mins}min"
     except Exception:
         return duration or ""
-
+    
 async def get_tv_imdb_id(tv_id):
     url = f"https://api.themoviedb.org/3/tv/{tv_id}/external_ids?api_key={TMDB_API_KEY}"
-        async with session.get(url) as resp:ssion:
-            data = await resp.json()as resp:
-            return data.get("imdb_id")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            data = await resp.json()
             return data.get("imdb_id")
