@@ -333,7 +333,7 @@ async def imgbb_upload_reply_url_handler(client, message):
                 "pic_url": pic.url,
                 "caption": caption,
             }
-            await imgbb_col.insert_one(pic_doc)
+            imgbb_col.insert_one(pic_doc)
             await bot.send_photo(UPDATE_CHANNEL2_ID, f"{pic.url}", caption=f"<b>{formatted_output}</b>")
         except Exception as e:
             await message.reply_text(f"❌ Failed to upload image to imgbb: {e}")
