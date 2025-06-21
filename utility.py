@@ -374,6 +374,7 @@ async def extract_movie_info(caption):
 file_queue = asyncio.Queue()
 
 async def file_queue_worker(bot):
+    processing_count = 0
     while True:
         item = await file_queue.get()
         file_info, reply_func, message = item
