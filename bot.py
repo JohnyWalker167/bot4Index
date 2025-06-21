@@ -199,7 +199,7 @@ async def index_channel_files(client, message: Message):
         await message.reply_text(f"Invalid link: {e}")
         return
 
-    await message.reply_text(f"Indexing files from {start_msg_id} to {end_msg_id} in channel {channel_id}...")
+    reply = await message.reply_text(f"Indexing files from {start_msg_id} to {end_msg_id} in channel {channel_id}...")
 
     batch_size = 50
     total_queued = 0
@@ -221,7 +221,7 @@ async def index_channel_files(client, message: Message):
                 await queue_file_for_processing(
                     msg,
                     channel_id=channel_id,
-                    reply_func=message.reply_text
+                    reply_func=reply.edit_text
                 )
                 total_queued += 1
         invalidate_channel_cache(channel_id)
