@@ -228,47 +228,55 @@ async def index_channel_files(client, message: Message):
 
     logger.info(f"✅ Queued {total_queued} files from channel {channel_id} for processing.")
 
-@bot.on_message(filters.command("delete") & filters.user(OWNER_ID))
-async def delete_file_handler(client, message: Message):
-    """
-    Handles the /delete command for the owner.
-    - Deletes a file from the database using a Telegram message link or IDs.
-    - Only supports /c/ links.
-    """
-    if len(message.command) == 2 and message.command[1].startswith("https://t.me/"):
-        link = message.command[1]
-        try:
-            match = re.search(r"t\.me/c/(-?\d+)/(\d+)", link)
-            if match:
-                channel_id = int("-100" + match.group(1)) if not match.group(1).startswith("-100") else int(match.group(1))
-                message_id = int(match.group(2))
-            else:
-                await message.reply_text("Invalid Telegram message link. Only /c/ links are supported.")
-                return
-        except Exception:
-            await message.reply_text("Invalid Telegram message link.")
-            return
-    elif len(message.command) == 3:
-        try:
-            channel_id = int(message.command[1])
-            message_id = int(message.command[2])
-        except Exception:
-            await message.reply_text("Usage: /delete <telegram_message_link> or /delete <channel_id> <message_id>")
-            return
-    else:
-        await message.reply_text("Usage: /delete <telegram_message_link> or /delete <channel_id> <message_id>")
-        return
-
+@bot.on_message(filters.private & filters.command("delete") & filters.user(OWNER_ID))
+async def delete_command(_, message):
     try:
-        result = files_col.delete_one({"channel_id": channel_id, "message_id": message_id})
-        invalidate_channel_cache(channel_id)
-        if result.deleted_count:
-            await message.reply_text(f"✅ File ({channel_id}, {message_id}) deleted from database.")
+        args = message.text.split(maxsplit=2)
+        if len(args) < 3:
+            await message.reply_text("Usage: /delete <file|tmdb|pic> <link>")
+            return
+        delete_type = args[1].strip().lower()
+        user_input = args[2].strip()
+        if delete_type == "file":
+            try:
+                channel_id, msg_id = extract_channel_and_msg_id(user_input)
+            except Exception as e:
+                await message.reply_text(f"Error: {e}")
+                return
+            # Try to find by channel_id and message_id (not msg_id)
+            file_doc = await files_col.find_one({"channel_id": channel_id, "message_id": msg_id})
+            if not file_doc:
+                await message.reply_text("No file found with that link in the database.")
+                return
+            # Use the same keys for deletion as for finding
+            result = await files_col.delete_one({"channel_id": channel_id, "message_id": msg_id})
+            if result.deleted_count > 0:
+                await message.reply_text(f"Database record deleted. File name: {file_doc.get('file_name')}")
+            else:
+                await message.reply_text(f"No file found with File name: {file_doc.get('file_name')}")
+        elif delete_type == "tmdb":
+            try:
+                tmdb_type, tmdb_id = await extract_tmdb_link(user_input)
+            except Exception as e:
+                await message.reply_text(f"Error: {e}")
+                return
+            result = await tmdb_col.delete_one({"tmdb_type": tmdb_type, "tmdb_id": tmdb_id})
+            if result.deleted_count > 0:
+                await message.reply_text(f"Database record deleted {tmdb_type}/{tmdb_id}.")
+            else:
+                await message.reply_text(f"No TMDB record found with ID {tmdb_type}/{tmdb_id} in the database.")
+        elif delete_type == "imgbb":
+            result = await imgbb_col.delete_one({"pic_url": user_input})
+            if result.deleted_count > 0:
+                await message.reply_text(f"Database record deleted : {user_input}")
+            else:
+                await message.reply_text(f"No picture found with: {user_input}")
         else:
-            await message.reply_text("❌ File not found in database.")
+            await message.reply_text("Invalid delete type. Use 'file' or 'tmdb' or 'imgbb'.")
+
     except Exception as e:
         await message.reply_text(f"Error: {e}")
-
+                                 
 @bot.on_message(filters.command('restart') & filters.private & filters.user(OWNER_ID))
 async def restart(client, message):
     """
