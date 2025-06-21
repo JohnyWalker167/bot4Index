@@ -42,14 +42,15 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         plot = imdb_info.get('plot')
         title = data.get('title')
         duration = format_duration(data.get('runtime'))
-        language = ", ".join(data.get('spoken_languages', [{}])[0].get('english_name', '') for _ in data.get('spoken_languages', []))
+        # Use 'name' instead of 'english_name' for language
+        language = ", ".join(lang.get('name', '') for lang in data.get('spoken_languages', [])) if data.get('spoken_languages') else ""
         genre = extract_genres(data)
         genre_tags = " ".join([genre_tag_with_emoji(g) for g in genre])
         release_date = data.get('release_date', '')[:10] if data.get('release_date') else ""
         director = cast_crew.get('director')
         starring = ", ".join(cast_crew.get('starring', [])) if cast_crew.get('starring') else None
+        vote_average = data.get('vote_average', None)
 
-        # Format release date
         if release_date and len(release_date) == 10:
             from datetime import datetime
             try:
@@ -59,10 +60,10 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         else:
             release_date_fmt = release_date
 
-        # Rename fields as needed
         message = (
             f"<b>🎬 Name:</b> {title}\n"
         )
+        message += f"<b>⭐ Rating:</b> {vote_average}/10\n" if vote_average is not None else ""
         message += f"<b>⏱️ Length:</b> {duration}\n" if duration else ""
         message += f"<b>🌐 Language:</b> {language}\n" if language else ""
         message += f"<b>🏷️ Genres:</b> {genre_tags}\n" if genre_tags else ""
@@ -70,7 +71,6 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         message += "\n"
         message += f"<b>📝 Plot:</b> {plot}\n" if plot else ""
         message += "\n"
-
         message += f"<b>🎬 Director:</b> {director}\n" if director else ""
         message += f"<b>⭐ Cast:</b> {starring}\n" if starring else ""
 
@@ -80,16 +80,16 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         imdb_id = get_tv_imdb_id_sync(movie_id)
         imdb_info = get_imdb_details(imdb_id) if imdb_id else {}
 
-        # Use IMDb plot if available, else fallback to TMDb overview
         plot = imdb_info.get('plot') if imdb_info.get('plot') else data.get('overview')
-
         title = data.get('name')
-        language = ", ".join(lang.get('english_name', '') for lang in data.get('spoken_languages', [])) if data.get('spoken_languages') else ""
+        # Use 'name' instead of 'english_name' for language
+        language = ", ".join(lang.get('name', '') for lang in data.get('spoken_languages', [])) if data.get('spoken_languages') else ""
         genre = extract_genres(data)
         genre_tags = " ".join([genre_tag_with_emoji(g) for g in genre])
         release_date = data.get('first_air_date', '')[:10] if data.get('first_air_date') else ""
         director = ", ".join([creator['name'] for creator in data.get('created_by', [])]) if data.get('created_by') else None
         starring = ", ".join(cast_crew.get('starring', [])) if cast_crew.get('starring') else None
+        vote_average = data.get('vote_average', None)
 
         if release_date and len(release_date) == 10:
             from datetime import datetime
@@ -105,6 +105,7 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
             f"<b>📺 Season:</b> {season}\n" if season else ""
             f"<b>📺 Episode:</b> {episode}\n" if episode else ""
         )
+        message += f"<b>⭐ Rating:</b> {vote_average}/10\n" if vote_average is not None else ""
         message += f"<b>🌐 Language:</b> {language}\n" if language else ""
         message += f"<b>🏷️ Genres:</b> {genre_tags}\n" if genre_tags else ""
         message += f"<b>📅 Released:</b> {release_date_fmt}\n" if release_date_fmt else ""
