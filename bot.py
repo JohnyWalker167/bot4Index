@@ -244,12 +244,12 @@ async def delete_command(_, message):
                 await message.reply_text(f"Error: {e}")
                 return
             # Try to find by channel_id and message_id (not msg_id)
-            file_doc = await files_col.find_one({"channel_id": channel_id, "message_id": msg_id})
+            file_doc = files_col.find_one({"channel_id": channel_id, "message_id": msg_id})
             if not file_doc:
                 await message.reply_text("No file found with that link in the database.")
                 return
             # Use the same keys for deletion as for finding
-            result = await files_col.delete_one({"channel_id": channel_id, "message_id": msg_id})
+            result = files_col.delete_one({"channel_id": channel_id, "message_id": msg_id})
             if result.deleted_count > 0:
                 await message.reply_text(f"Database record deleted. File name: {file_doc.get('file_name')}")
             else:
@@ -260,13 +260,13 @@ async def delete_command(_, message):
             except Exception as e:
                 await message.reply_text(f"Error: {e}")
                 return
-            result = await tmdb_col.delete_one({"tmdb_type": tmdb_type, "tmdb_id": tmdb_id})
+            result = tmdb_col.delete_one({"tmdb_type": tmdb_type, "tmdb_id": tmdb_id})
             if result.deleted_count > 0:
                 await message.reply_text(f"Database record deleted {tmdb_type}/{tmdb_id}.")
             else:
                 await message.reply_text(f"No TMDB record found with ID {tmdb_type}/{tmdb_id} in the database.")
         elif delete_type == "imgbb":
-            result = await imgbb_col.delete_one({"pic_url": user_input})
+            result = imgbb_col.delete_one({"pic_url": user_input})
             if result.deleted_count > 0:
                 await message.reply_text(f"Database record deleted : {user_input}")
             else:
