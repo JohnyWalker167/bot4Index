@@ -375,10 +375,13 @@ file_queue = asyncio.Queue()
 
 async def file_queue_worker(bot):
     processing_count = 0
+    last_reply_func = None
     while True:
         item = await file_queue.get()
         file_info, reply_func, message = item
         processing_count += 1
+        if reply_func:
+            last_reply_func = reply_func
         try:
             # Check for duplicate by file name in this channel
             existing = files_col.find_one({
@@ -461,18 +464,17 @@ async def file_queue_worker(bot):
         finally:
             file_queue.task_done()
             if file_queue.empty():
-                if processing_count > 1:
-                    # Notify only if more than one file was processed
+                if processing_count > 1 and last_reply_func:
                     try:
-                        if reply_func:
-                            await safe_api_call(
-                                reply_func(
-                                    f"✅ Done processing {processing_count} file(s) in the queue."
-                                )
+                        await safe_api_call(
+                            last_reply_func(
+                                f"✅ Done processing {processing_count} file(s) in the queue."
                             )
+                        )
                     except Exception:
                         pass
-            processing_count = 0  # Reset for next batch
+                processing_count = 0  # Reset for next batch
+                last_reply_func = None  # Reset for next batch
 
             
 
