@@ -1,4 +1,5 @@
 import re
+import os
 import asyncio
 import base64
 import uuid
@@ -8,6 +9,11 @@ from pyrogram.errors import FloodWait
 from pyrogram import enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import logger
+from mutagen.mp3 import MP3
+from mutagen.flac import FLAC
+from mutagen.mp4 import MP4
+from mutagen.id3 import ID3, APIC
+from mutagen import File as MutagenFile
 
 from db import (
     allowed_channels_col,
@@ -15,10 +21,9 @@ from db import (
     tokens_col,
     auth_users_col,
     files_col,
+    tmdb_col
 )
-from config import (SHORTERNER_URL, URLSHORTX_API_TOKEN, 
-                    UPDATE_CHANNEL_ID, EXCLUDE_CHANNEL_ID,
-                    LOG_CHANNEL_ID)
+from config import *
 from tmdb import get_movie_by_name, get_tv_by_name, get_by_id
 
 # =========================
@@ -160,6 +165,87 @@ def upsert_file_info(file_info):
         upsert=True
     )
 
+def upsert_tmdb_info(tmdb_id, tmdb_type, season=None, episode=None):
+    """
+    Insert or update TMDB info in tmdb_col.
+    If the same tmdb_id and tmdb_type exists, update season_info array.
+    """
+    season_info = {}
+    if season is not None:
+        season_info["season"] = int(season)
+    if episode is not None:
+        season_info["episode"] = int(episode)
+    update = {
+        "$setOnInsert": {"tmdb_id": tmdb_id, "tmdb_type": tmdb_type}
+    }
+    if season_info:
+        update["$addToSet"] = {"season_info": season_info}
+    tmdb_col.update_one(
+        {"tmdb_id": tmdb_id, "tmdb_type": tmdb_type},
+        update,
+        upsert=True
+    )
+
+async def restore_tmdb_photos(bot):
+    """
+    Restore all TMDB poster photos from the database.
+    For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
+    """
+    cursor = tmdb_col.find({})
+    async for doc in cursor if hasattr(cursor, "__aiter__") else cursor:
+        tmdb_id = doc.get("tmdb_id")
+        tmdb_type = doc.get("tmdb_type")
+        season_infos = doc.get("season_info", [])
+
+        # If no season_info, just call once with None values
+        if not season_infos:
+            season_episode_list = [(None, None)]
+        else:
+            season_episode_list = [(s.get("season"), s.get("episode")) for s in season_infos]
+
+        for season, episode in season_episode_list:
+            results = await get_by_id(tmdb_type, tmdb_id, season, episode)
+            poster_url = results.get('poster_url')
+            trailer = results.get('trailer_url')
+            info = results.get('message')
+            if poster_url:
+                keyboard = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
+                await asyncio.sleep(3) 
+                # Avoid hitting API limits
+                await safe_api_call(
+                    bot.send_photo(
+                        UPDATE_CHANNEL_ID,
+                        photo=poster_url,
+                        caption=info,
+                        parse_mode=enums.ParseMode.HTML,
+                        reply_markup=keyboard
+                    )
+                )
+
+async def restore_imgbb_photos(bot):
+    """
+    Restore all TMDB poster photos from the database.
+    For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
+    """
+    cursor = tmdb_col.find({})
+    async for doc in cursor if hasattr(cursor, "__aiter__") else cursor:
+        pic_url = doc.get("pic_url")
+        caption = doc.get("caption")
+
+        await asyncio.sleep(3) 
+        # Avoid hitting API limits
+        if pic_url:
+            await safe_api_call(
+                bot.send_photo( 
+                    UPDATE_CHANNEL_ID,
+                    photo=pic_url,
+                    caption=caption,
+                    parse_mode=enums.ParseMode.HTML,
+                )
+            )
+
+
 def extract_file_info(message, channel_id=None):
     """Extract file info from a Pyrogram message."""
     caption_name = message.caption.strip() if message.caption else None
@@ -255,8 +341,8 @@ async def extract_movie_info(caption):
         season_match = re.search(r'\bS(\d{1,2})\b', caption, re.IGNORECASE)
         episode_match = re.search(r'\bE(\d{1,2})\b', caption, re.IGNORECASE)
 
-        season = f"S{int(season_match.group(1)):02d}" if season_match else None
-        episode = f"E{int(episode_match.group(1)):02d}" if episode_match else None
+        season = f"{int(season_match.group(1)):02d}" if season_match else None
+        episode = f"{int(episode_match.group(1)):02d}" if episode_match else None
 
         current_year = datetime.now().year + 2  # Allow a couple of years ahead for upcoming movies
         # Exclude 4-digit numbers followed by 'p' (like 1080p, 2160p, 720p)
@@ -290,7 +376,7 @@ file_queue = asyncio.Queue()
 async def file_queue_worker(bot):
     while True:
         item = await file_queue.get()
-        file_info, reply_func = item
+        file_info, reply_func, message = item
         try:
             # Check for duplicate by file name in this channel
             existing = files_col.find_one({
@@ -309,7 +395,13 @@ async def file_queue_worker(bot):
                     )
             else:
                 upsert_file_info(file_info)
-
+                if message.audio:
+                    audio_path = await bot.download_media(message)
+                    thumb_path = await get_audio_thumbnail(audio_path)
+                    file_info = f"🎧 <b>{message.audio.title}</b>\n🧑‍🎤 <b>{message.audio.artist}</b>"
+                    await bot.send_photo(UPDATE_CHANNEL3_ID, photo=thumb_path, caption=file_info)
+                    os.remove(audio_path)
+                    os.remove(thumb_path)
                 try:
                     if str(file_info["channel_id"]) not in EXCLUDE_CHANNEL_ID:
                         title, release_year, season, episode = await extract_movie_info(file_info["file_name"])
@@ -324,18 +416,33 @@ async def file_queue_worker(bot):
                         trailer = results.get('trailer_url')
                         info = results.get('message')
 
+                        
                         if poster_url:
-                            keyboard = InlineKeyboardMarkup(
-                                [[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
-                            await safe_api_call(
-                                bot.send_photo(
-                                    UPDATE_CHANNEL_ID,
-                                    photo=poster_url,
-                                    caption=info,
-                                    parse_mode=enums.ParseMode.HTML,
-                                    reply_markup=keyboard
+                            # Check if this tmdb_id, tmdb_type, season, episode already exists in tmdb_col
+                            query = {"tmdb_id": tmdb_id, "tmdb_type": tmdb_type}
+                            if season is not None:
+                                query["season_info"] = {"$elemMatch": {"season": int(season)}}
+                                if episode is not None:
+                                    query["season_info"]["$elemMatch"]["episode"] = int(episode)
+                            elif episode is not None:
+                                query["season_info"] = {"$elemMatch": {"episode": int(episode)}}
+
+                            exists = tmdb_col.find_one(query)
+                            if not exists:
+                                keyboard = InlineKeyboardMarkup(
+                                    [[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
+                                await asyncio.sleep(3)  # Avoid hitting API limits
+                                await safe_api_call(
+                                    bot.send_photo(
+                                        UPDATE_CHANNEL_ID,
+                                        photo=poster_url,
+                                        caption=info,
+                                        parse_mode=enums.ParseMode.HTML,
+                                        reply_markup=keyboard
+                                    )
                                 )
-                            )
+                            upsert_tmdb_info(tmdb_id, tmdb_type, season, episode)
+
                 except Exception as e:
                     logger.error(f"Error processing TMDB info:{e}")
                     if reply_func:
@@ -352,15 +459,16 @@ async def file_queue_worker(bot):
         finally:
             file_queue.task_done()
             
+
 # =========================
 # Unified File Queueing
 # =========================
 
 async def queue_file_for_processing(message, channel_id=None, reply_func=None):
-    try:
+    try:            
         file_info = extract_file_info(message, channel_id=channel_id)
         if file_info["file_name"]:
-            await file_queue.put((file_info, reply_func))
+            await file_queue.put((file_info, reply_func, message))
     except Exception as e:
         if reply_func:
             await safe_api_call(reply_func(f"❌ Error queuing file: {e}"))
@@ -389,3 +497,29 @@ async def periodic_expiry_cleanup(interval_seconds=3600 * 4):
         delete_expired_auth_users()
         delete_expired_tokens()
         await asyncio.sleep(interval_seconds)
+
+
+async def get_audio_thumbnail(audio_path, output_dir="downloads"):
+    audio = MutagenFile(audio_path)
+    thumbnail_path = os.path.join(output_dir, "audio_thumbnail.jpg")
+
+    if isinstance(audio, MP3):
+        if audio.tags and isinstance(audio.tags, ID3):
+            for tag in audio.tags.values():
+                if isinstance(tag, APIC):
+                    with open(thumbnail_path, "wb") as img_file:
+                        img_file.write(tag.data)
+                    return thumbnail_path
+    elif isinstance(audio, FLAC):
+        if audio.pictures:
+            with open(thumbnail_path, "wb") as img_file:
+                img_file.write(audio.pictures[0].data)
+            return thumbnail_path
+    elif isinstance(audio, MP4):
+        if audio.tags and 'covr' in audio.tags:
+            cover = audio.tags['covr'][0]
+            with open(thumbnail_path, "wb") as img_file:
+                img_file.write(cover)
+            return thumbnail_path
+    
+    return None

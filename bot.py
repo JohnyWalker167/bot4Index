@@ -2,6 +2,7 @@
 # Imports
 # =========================
 import asyncio
+import imgbbpy
 import base64
 import os
 import re
@@ -21,9 +22,18 @@ from utility import (
     safe_api_call, get_allowed_channels, invalidate_channel_cache,
     delete_after_delay, human_readable_size,
     queue_file_for_processing, file_queue_worker,
-    file_queue, extract_tmdb_link, periodic_expiry_cleanup
+    file_queue, extract_tmdb_link, periodic_expiry_cleanup,
+    restore_tmdb_photos, restore_imgbb_photos
 )
-from db import db, users_col, tokens_col, files_col, allowed_channels_col, auth_users_col
+from db import (db, users_col, 
+                tokens_col, 
+                files_col, 
+                allowed_channels_col, 
+                auth_users_col,
+                tmdb_col,
+                imgbb_col
+                )
+
 from fast_api import api
 from tmdb import get_by_id
 import logging
@@ -273,6 +283,56 @@ async def restart(client, message):
             await safe_api_call(message.reply_text(f"Failed to delete log file: {e}"))
     os.system("python3 update.py")
     os.execl(sys.executable, sys.executable, "bot.py")
+
+@bot.on_message(filters.private & filters.command("restore") & filters.user(OWNER_ID))
+async def update_info(client, message):
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await message.reply_text("Usage: /restore tmdb|imgbb ")
+            return
+        restore_type = args[1].strip()
+        if restore_type == "tmdb":
+            await restore_tmdb_photos(bot)
+        elif restore_type == "imgbb":
+            await restore_imgbb_photos(bot)
+        else:
+            await message.reply_text("Invalid restore type. Use 'tmdb' or 'imgbb'.")
+            return
+    except Exception as e:
+        await message.reply_text(f"Error in Update Command: {e}")
+
+@bot.on_message(filters.command("imgbb") & filters.private & filters.reply & filters.user(OWNER_ID))
+async def imgbb_upload_reply_url_handler(client, message):
+    # User replies to a message containing the URL and sends: /imgbb <caption>
+    try:
+        if not message.reply_to_message or not message.reply_to_message.text:
+            await message.reply_text("❌ Please reply to a message containing the image URL and provide the caption with the command.")
+            return
+
+        image_url = message.reply_to_message.text.strip()
+        caption = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
+        imgbb_client = imgbbpy.AsyncClient(IMGBB_API_KEY)
+        parts = caption.strip().split(' ', 1)
+        if len(parts) == 2:
+            studio = parts[0]
+            star_and_scene = parts[1]
+            formatted_output = f"📁 Studio: {studio}\n\n🎬 Stars & Scene: {star_and_scene}"
+
+        try:
+            pic = await imgbb_client.upload(url=image_url)
+            pic_doc = {
+                "pic_url": pic.url,
+                "caption": caption,
+            }
+            await imgbb_col.insert_one(pic_doc)
+            await bot.send_photo(UPDATE_CHANNEL2_ID, f"{pic.url}", caption=f"<b>{formatted_output}</b>")
+        except Exception as e:
+            await message.reply_text(f"❌ Failed to upload image to imgbb: {e}")
+        finally:
+            await imgbb_client.close()
+    except Exception as e:
+        await message.reply_text(f"⚠️ An unexpected error occurred: {e}")
 
 @bot.on_message(filters.command("addchannel") & filters.user(OWNER_ID))
 async def add_channel_handler(client, message: Message):

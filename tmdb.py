@@ -102,8 +102,8 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
 
         message = (
             f"<b>🎬 Name:</b> {title}\n"
-            f"<b>📺 Season:</b> {season}\n" if season else ""
-            f"<b>📺 Episode:</b> {episode}\n" if episode else ""
+            f"<b>📺 Season:</b> S{season}\n" if season else ""
+            f"<b>📺 Episode:</b> E{episode}\n" if episode else ""
         )
         message += f"<b>⭐ Rating:</b> {vote_average_str}/10\n" if vote_average_str is not None else ""
         message += f"<b>🌐 Language:</b> {language}\n" if language else ""
@@ -126,7 +126,7 @@ def get_tv_imdb_id_sync(tv_id):
     data = resp.json()
     return data.get("imdb_id")
 
-async def get_by_id(tmdb_type, tmdb_id, season, episode):
+async def get_by_id(tmdb_type, tmdb_id, season=None, episode=None):
     api_url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US"
     try:
         async with aiohttp.ClientSession() as session:
