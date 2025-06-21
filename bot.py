@@ -226,7 +226,7 @@ async def index_channel_files(client, message: Message):
                 total_queued += 1
         invalidate_channel_cache(channel_id)
 
-    await message.reply_text(f"✅ Queued {total_queued} files from channel {channel_id} for processing.")
+    logger.info(f"✅ Queued {total_queued} files from channel {channel_id} for processing.")
 
 @bot.on_message(filters.command("delete") & filters.user(OWNER_ID))
 async def delete_file_handler(client, message: Message):

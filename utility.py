@@ -377,6 +377,7 @@ async def file_queue_worker(bot):
     while True:
         item = await file_queue.get()
         file_info, reply_func, message = item
+        processing_count += 1
         try:
             # Check for duplicate by file name in this channel
             existing = files_col.find_one({
@@ -458,6 +459,20 @@ async def file_queue_worker(bot):
                 await safe_api_call(reply_func(f"❌ Error saving file: {e}"))
         finally:
             file_queue.task_done()
+            if file_queue.empty():
+                if processing_count > 1:
+                    # Notify only if more than one file was processed
+                    try:
+                        if reply_func:
+                            await safe_api_call(
+                                reply_func(
+                                    f"✅ Done processing {processing_count} file(s) in the queue."
+                                )
+                            )
+                    except Exception:
+                        pass
+            processing_count = 0  # Reset for next batch
+
             
 
 # =========================
