@@ -5,58 +5,41 @@ from config import TMDB_API_KEY, logger
 
 POSTER_BASE_URL = 'https://image.tmdb.org/t/p/original'
 
-async def get_by_id(tmdb_type, tmdb_id, season, episode):
-    api_url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US"
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as detail_response:
-                data = await detail_response.json()
-                
-                message = await format_tmdb_info(tmdb_type, tmdb_id, data, season, episode)
+def get_cast_and_crew(tmdb_type, movie_id):
+    """
+    Fetches the cast and crew details (starring actors and director) for a movie or TV show.
+    """
+    import requests
+    cast_crew_url = f'https://api.themoviedb.org/3/{tmdb_type}/{movie_id}/credits?api_key={TMDB_API_KEY}&language=en-US'
+    response = requests.get(cast_crew_url)
+    cast_crew_data = response.json()
 
-                poster_path = data.get('poster_path', None)
-                if poster_path:
-                        poster_url = f"https://image.tmdb.org/t/p/original{poster_path}" if poster_path else None
-
-                # Fetch trailer URL if available
-                video_url = f'https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}/videos?api_key={TMDB_API_KEY}'
-                async with session.get(video_url) as video_response:
-                    video_data = await video_response.json()
-                    trailer_url = None
-                    for video in video_data.get('results', []):
-                        if video['site'] == 'YouTube' and video['type'] == 'Trailer':
-                            trailer_url = f"https://www.youtube.com/watch?v={video['key']}"
-                            break
-
-                return {"message": message, "poster_url": poster_url, "trailer_url": trailer_url}
-                
-    except aiohttp.ClientError as e:
-      print(f"Error fetching TMDB data: {e}")
-    return {"message": f"Error: {str(e)}", "poster_url": None}
+    starring = [member['name'] for member in cast_crew_data.get('cast', [])[:5]]
+    director = next((member['name'] for member in cast_crew_data.get('crew', []) if member['job'] == 'Director'), 'N/A')
+    return {"starring": starring, "director": director}
 
 def get_imdb_details(imdb_id):
     ia = imdb.IMDb()
-    movie = ia.get_movie(imdb_id.replace('tt', ''))
-    if not movie:
+    try:
+        movie = ia.get_movie(imdb_id.replace('tt', ''))
+        if not movie:
+            return {}
+        return {
+            "rating": movie.get('rating'),
+            "plot": movie.get('plot', [None])[0]
+        }
+    except Exception as e:
+        logger.error(f"IMDbPY error: {e}")
         return {}
 
-    return {
-        "rating": movie.get('rating'),
-        "plot": movie.get('plot', [None])[0]
-    }
-
-async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
-    cast_crew = await get_cast_and_crew(tmdb_type, movie_id)
+def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
+    cast_crew = get_cast_and_crew(tmdb_type, movie_id)
 
     if tmdb_type == 'movie':
         imdb_id = data.get('imdb_id')
         imdb_info = get_imdb_details(imdb_id) if imdb_id else {}
 
-        # Only plot from IMDbPY
         plot = imdb_info.get('plot')
-
-        # All other details from TMDb
         title = data.get('title')
         duration = format_duration(data.get('runtime'))
         language = ", ".join(data.get('spoken_languages', [{}])[0].get('english_name', '') for _ in data.get('spoken_languages', []))
@@ -94,7 +77,7 @@ async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
         return message.strip()
 
     elif tmdb_type == 'tv':
-        imdb_id = await get_tv_imdb_id(movie_id)
+        imdb_id = get_tv_imdb_id_sync(movie_id)
         imdb_info = get_imdb_details(imdb_id) if imdb_id else {}
 
         # Use IMDb plot if available, else fallback to TMDb overview
@@ -135,29 +118,36 @@ async def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
     else:
         return "Unknown type. Unable to format information."
 
-async def get_cast_and_crew(tmdb_type, movie_id):
-    """
-    Fetches the cast and crew details (starring actors and director) for a movie or TV show.
-    
-    Args:
-    - tmdb_type (str): The type of TMDb entity ('movie', 'tv').
-    - movie_id (int): The TMDb movie or TV show ID.
+def get_tv_imdb_id_sync(tv_id):
+    import requests
+    url = f"https://api.themoviedb.org/3/tv/{tv_id}/external_ids?api_key={TMDB_API_KEY}"
+    resp = requests.get(url)
+    data = resp.json()
+    return data.get("imdb_id")
 
-    Returns:
-    - dict: A dictionary containing the starring actors and director.
-    """
-    cast_crew_url = f'https://api.themoviedb.org/3/{tmdb_type}/{movie_id}/credits?api_key={TMDB_API_KEY}&language=en-US'
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.get(cast_crew_url) as response:
-            cast_crew_data = await response.json()
+async def get_by_id(tmdb_type, tmdb_id, season, episode):
+    api_url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url) as detail_response:
+                data = await detail_response.json()
+                message = format_tmdb_info(tmdb_type, tmdb_id, data, season, episode)
+                poster_path = data.get('poster_path', None)
+                poster_url = f"https://image.tmdb.org/t/p/original{poster_path}" if poster_path else None
 
-    # Get starring actors (first 3 cast members) and director
-    starring = [member['name'] for member in cast_crew_data.get('cast', [])[:5]]
-    director = next((member['name'] for member in cast_crew_data.get('crew', []) if member['job'] == 'Director'), 'N/A')
+                video_url = f'https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}/videos?api_key={TMDB_API_KEY}'
+                async with session.get(video_url) as video_response:
+                    video_data = await video_response.json()
+                    trailer_url = None
+                    for video in video_data.get('results', []):
+                        if video['site'] == 'YouTube' and video['type'] == 'Trailer':
+                            trailer_url = f"https://www.youtube.com/watch?v={video['key']}"
+                            break
 
-    return {"starring": starring, "director": director}
-
+                return {"message": message, "poster_url": poster_url, "trailer_url": trailer_url}
+    except aiohttp.ClientError as e:
+        print(f"Error fetching TMDB data: {e}")
+    return {"message": f"Error: {str(e)}", "poster_url": None}
 
 def truncate_overview(overview):
     """
