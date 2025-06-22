@@ -754,11 +754,11 @@ async def main():
 
     await bot.start()
 
-    # await bot.set_bot_commands([
-    #     BotCommand("search", "your search query"),
-    #     # Add more commands as needed, e.g.:
-    #     # BotCommand("start", "Start the bot"),
-    # ])
+    #await bot.set_bot_commands([
+         #BotCommand("search", "your search query"),
+         # Add more commands as needed, e.g.:
+         # BotCommand("start", "Start the bot"),
+    #])
     
     bot.loop.create_task(start_fastapi())
     bot.loop.create_task(file_queue_worker(bot))  # Start the queue worker
@@ -767,7 +767,7 @@ async def main():
     # Send startup message to log channel
     try:
         me = await bot.get_me()
-        user_name = me.first_name or me.username or "Bot"
+        user_name = me.username or "Bot"
         await bot.send_message(LOG_CHANNEL_ID, f"✅ @{user_name} started and FastAPI server running.")
         logger.info("Bot started and FastAPI server running.")
     except Exception as e:
