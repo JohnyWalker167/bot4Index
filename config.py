@@ -46,6 +46,7 @@ UPDATE_CHANNEL2_ID = int(os.getenv('UPDATE_CHANNEL2_ID'))
 UPDATE_CHANNEL3_ID = int(os.getenv('UPDATE_CHANNEL3_ID'))
 GROUP_ID = int(os.getenv('GROUP_ID', 0))
 GROUP_LINK = os.getenv('GROUP_LINK', 'https://t.me/')
+UPDATE_CHANNEL_LINK = os.getenv('UPDATE_CHANNEL_LINK', 'https://t.me/')
 
 EXCLUDE_CHANNEL_ID = os.getenv('EXCLUDE_CHANNEL_ID', '').split(',')
 LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID'))

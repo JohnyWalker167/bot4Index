@@ -159,9 +159,16 @@ async def start_handler(client, message):
         return
 
     # --- Default greeting ---
-    await safe_api_call(message.reply_text(
-        f"👋 Welcome, {user_name}!\nUse the <b>/search your_search_query</b> command in this {GROUP_LINK} to find files."
-    ))
+    await safe_api_call(
+        message.reply_text(
+            f"👋 Welcome, {user_name}!\nUse the <b>/search your_search_query</b> command in this {GROUP_LINK} to find files.",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("🔔 Updates Channel", url=f"{UPDATE_CHANNEL_LINK}")]
+                ]
+            )
+        )
+    )
 
 @bot.on_message(filters.document | filters.video | filters.audio | filters.photo)
 async def channel_file_handler(client, message):
@@ -731,7 +738,12 @@ async def delete_service_messages(client, message):
                     reply = await message.reply_text(
                         f"👋 Welcome, {user.mention if hasattr(user, 'mention') else user.first_name}!\n"
                         "Use the <b>/search your_search_query</b> command to find files in this group.",
-                        parse_mode=enums.ParseMode.HTML
+                        parse_mode=enums.ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [
+                                [InlineKeyboardButton("🔔 Updates Channel", url=f"{UPDATE_CHANNEL_LINK}")]
+                            ]
+                        )
                     )
                     if reply:
                         bot.loop.create_task(delete_after_delay(client, reply.chat.id, reply.id))
@@ -740,6 +752,29 @@ async def delete_service_messages(client, message):
         await message.delete()
     except Exception as e:
         logger.error(f"Failed to delete service message: {e}")
+
+@bot.on_message(filters.command("start") & filters.chat(GROUP_ID))
+async def group_start_handler(client, message):
+    """Handles the /start command in the group chat."""
+    try:
+        user = message.from_user
+        user_name = user.first_name or user.last_name or (user.username and f"@{user.username}") or "USER"
+        reply = await message.reply_text(
+                        f"👋 Welcome, {user_name}!\n"
+                        "Use the <b>/search your_search_query</b> command to find files in this group.",
+                        parse_mode=enums.ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [
+                                [InlineKeyboardButton("🔔 Updates Channel", url=f"{UPDATE_CHANNEL_LINK}")]
+                            ]
+                        )
+                    )
+                    if reply:
+                        bot.loop.create_task(delete_after_delay(client, reply.chat.id, reply.id))
+        await message.delete()
+    except Exception as e:
+        logger.error(f"Failed in group start message: {e}")
+
 
 # =========================
 # Main Entrypoint
@@ -754,11 +789,9 @@ async def main():
 
     await bot.start()
 
-    #await bot.set_bot_commands([
-         #BotCommand("search", "your search query"),
-         # Add more commands as needed, e.g.:
-         # BotCommand("start", "Start the bot"),
-    #])
+    await bot.set_bot_commands([
+         BotCommand("start", "check bot status")
+    ])
     
     bot.loop.create_task(start_fastapi())
     bot.loop.create_task(file_queue_worker(bot))  # Start the queue worker
