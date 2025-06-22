@@ -85,90 +85,93 @@ async def start_handler(client, message):
     - Handles file access via deep link.
     - Sends a greeting if no special argument is provided.
     """
-    user_id = message.from_user.id
-    user = message.from_user
-    user_name = user.first_name or user.last_name or (user.username and f"@{user.username}") or "USER"
+    try:
+        user_id = message.from_user.id
+        user = message.from_user
+        user_name = user.first_name or user.last_name or (user.username and f"@{user.username}") or "USER"
 
-    add_user(user_id)
-    bot_username = BOT_USERNAME
+        add_user(user_id)
+        bot_username = BOT_USERNAME
 
-    # --- Token-based authorization ---
-    if len(message.command) == 2 and message.command[1].startswith("token_"):
-        if is_token_valid(message.command[1][6:], user_id):
-            authorize_user(user_id)
-            await safe_api_call(message.reply_text("✅ You are now authorized to access files for 24 hours."))
-            await safe_api_call(bot.send_message(LOG_CHANNEL_ID, f"✅ User <b>{user_name}</b> (<code>{user.id}</code>) authorized via token."))
-        else:
-            await safe_api_call(message.reply_text("❌ Invalid or expired token. Please get a new link."))
-        return
+        # --- Token-based authorization ---
+        if len(message.command) == 2 and message.command[1].startswith("token_"):
+            if is_token_valid(message.command[1][6:], user_id):
+                authorize_user(user_id)
+                await safe_api_call(message.reply_text("✅ You are now authorized to access files for 24 hours."))
+                await safe_api_call(bot.send_message(LOG_CHANNEL_ID, f"✅ User <b>{user_name}</b> (<code>{user.id}</code>) authorized via token."))
+            else:
+                await safe_api_call(message.reply_text("❌ Invalid or expired token. Please get a new link."))
+            return
 
-    # --- File access via deep link ---
-    if len(message.command) == 2 and message.command[1].startswith("file_"):
-        # Check if user is authorized
-        if not is_user_authorized(user_id):
-            now = datetime.now(timezone.utc)
-            token_doc = tokens_col.find_one({
-                "user_id": user_id,
-                "expiry": {"$gt": now}
-            })
-            token_id = token_doc["token_id"] if token_doc else generate_token(user_id)
-            short_link = shorten_url(get_token_link(token_id, bot_username))
-            reply = await safe_api_call(message.reply_text(
-                "❌ You are not authorized\n"
-                "Please use this link to get access for 24 hours:",
+        # --- File access via deep link ---
+        if len(message.command) == 2 and message.command[1].startswith("file_"):
+            # Check if user is authorized
+            if not is_user_authorized(user_id):
+                now = datetime.now(timezone.utc)
+                token_doc = tokens_col.find_one({
+                    "user_id": user_id,
+                    "expiry": {"$gt": now}
+                })
+                token_id = token_doc["token_id"] if token_doc else generate_token(user_id)
+                short_link = shorten_url(get_token_link(token_id, bot_username))
+                reply = await safe_api_call(message.reply_text(
+                    "❌ You are not authorized\n"
+                    "Please use this link to get access for 24 hours:",
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("Get Access Link", url=short_link)]]
+                    )
+                ))
+                bot.loop.create_task(delete_after_delay(client, reply.chat.id, reply.id))
+
+                return
+
+            # Limit file access per session
+            if user_file_count[user_id] >= MAX_FILES_PER_SESSION:
+                await safe_api_call(message.reply_text("❌ You have reached the maximum of 10 files per session."))
+                return
+
+            # Decode file link and send file
+            try:
+                b64 = message.command[1][5:]
+                padding = '=' * (-len(b64) % 4)
+                decoded = base64.urlsafe_b64decode(b64 + padding).decode()
+                channel_id_str, msg_id_str = decoded.split("_")
+                channel_id = int(channel_id_str)
+                msg_id = int(msg_id_str)
+            except Exception:
+                await safe_api_call(message.reply_text("Invalid file link."))
+                return
+
+            file_doc = files_col.find_one({"channel_id": channel_id, "message_id": msg_id})
+            if not file_doc:
+                await safe_api_call(message.reply_text("File not found."))
+                return
+
+            try:
+                sent = await safe_api_call(client.copy_message(
+                    chat_id=message.chat.id,
+                    from_chat_id=file_doc["channel_id"],
+                    message_id=file_doc["message_id"]
+                ))
+                user_file_count[user_id] += 1
+                bot.loop.create_task(delete_after_delay(client, sent.chat.id, sent.id))
+            except Exception as e:
+                await safe_api_call(message.reply_text(f"Failed to send file: {e}"))
+            return
+
+        # --- Default greeting ---
+        await safe_api_call(
+            message.reply_text(
+                f"👋 Welcome, {user_name}!\nUse the <b>/search your_search_query</b> command in this {GROUP_LINK} to find files.",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Get Access Link", url=short_link)]]
+                    [
+                        [InlineKeyboardButton("🔔 Updates Channel", url=f"{UPDATE_CHANNEL_LINK}")]
+                    ]
                 )
-            ))
-            bot.loop.create_task(delete_after_delay(client, reply.chat.id, reply.id))
-
-            return
-
-        # Limit file access per session
-        if user_file_count[user_id] >= MAX_FILES_PER_SESSION:
-            await safe_api_call(message.reply_text("❌ You have reached the maximum of 10 files per session."))
-            return
-
-        # Decode file link and send file
-        try:
-            b64 = message.command[1][5:]
-            padding = '=' * (-len(b64) % 4)
-            decoded = base64.urlsafe_b64decode(b64 + padding).decode()
-            channel_id_str, msg_id_str = decoded.split("_")
-            channel_id = int(channel_id_str)
-            msg_id = int(msg_id_str)
-        except Exception:
-            await safe_api_call(message.reply_text("Invalid file link."))
-            return
-
-        file_doc = files_col.find_one({"channel_id": channel_id, "message_id": msg_id})
-        if not file_doc:
-            await safe_api_call(message.reply_text("File not found."))
-            return
-
-        try:
-            sent = await safe_api_call(client.copy_message(
-                chat_id=message.chat.id,
-                from_chat_id=file_doc["channel_id"],
-                message_id=file_doc["message_id"]
-            ))
-            user_file_count[user_id] += 1
-            bot.loop.create_task(delete_after_delay(client, sent.chat.id, sent.id))
-        except Exception as e:
-            await safe_api_call(message.reply_text(f"Failed to send file: {e}"))
-        return
-
-    # --- Default greeting ---
-    await safe_api_call(
-        message.reply_text(
-            f"👋 Welcome, {user_name}!\nUse the <b>/search your_search_query</b> command in this {GROUP_LINK} to find files.",
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("🔔 Updates Channel", url=f"{UPDATE_CHANNEL_LINK}")]
-                ]
             )
         )
-    )
+    except Exception as e:
+        await safe_api_call(message.reply_text(f"⚠️ An unexpected error occurred: {e}"))
 
 @bot.on_message(filters.document | filters.video | filters.audio | filters.photo)
 async def channel_file_handler(client, message):
@@ -769,8 +772,8 @@ async def group_start_handler(client, message):
                             ]
                         )
                     )
-                    if reply:
-                        bot.loop.create_task(delete_after_delay(client, reply.chat.id, reply.id))
+        if reply:
+            bot.loop.create_task(delete_after_delay(client, reply.chat.id, reply.id))
         await message.delete()
     except Exception as e:
         logger.error(f"Failed in group start message: {e}")
@@ -789,9 +792,9 @@ async def main():
 
     await bot.start()
 
-    await bot.set_bot_commands([
-         BotCommand("start", "check bot status")
-    ])
+    #await bot.set_bot_commands([
+    #    BotCommand("start", "check bot status")
+    #])
     
     bot.loop.create_task(start_fastapi())
     bot.loop.create_task(file_queue_worker(bot))  # Start the queue worker
