@@ -217,14 +217,14 @@ def upsert_tmdb_info(tmdb_id, tmdb_type, season=None, episode=None):
         upsert=True
     )
 
-async def restore_tmdb_photos(bot, start_idx=0):
+async def restore_tmdb_photos(bot, start_id=None):
     """
     Restore all TMDB poster photos from the database.
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
     query = {}
-    if start_id is not None:
-        query['_id'] = {'$gt': ObjectId(start_id)}
+    if start_id:
+        query['_id'] = {'$gt': start_id}
     cursor = tmdb_col.find(query).sort('_id', 1)
     docs = list(cursor)
     for doc in docs:
@@ -262,14 +262,14 @@ async def restore_tmdb_photos(bot, start_idx=0):
                 logger.error(f"Error in restore_tmdb_photos for tmdb_id={tmdb_id}, season={season}, episode={episode}: {e}")
                 continue  # Continue to the next (season, episode) or doc
 
-async def restore_imgbb_photos(bot, start_idx=0):
+async def restore_imgbb_photos(bot, start_id=None):
     """
     Restore all TMDB poster photos from the database.
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
     query = {}
-    if start_id is not None:
-        query['_id'] = {'$gt': ObjectId(start_id)}
+    if start_id:
+        query['_id'] = {'$gt': start_id}
     cursor = tmdb_col.find(query).sort('_id', 1)
     docs = list(cursor)
     for doc in docs:
