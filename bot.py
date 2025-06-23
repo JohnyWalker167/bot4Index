@@ -497,7 +497,7 @@ async def tmdb_command(client, message):
         tmdb_type, tmdb_id = await extract_tmdb_link(tmdb_link)
         season = message.command[2] if len(message.command) > 2 else None
         episode = message.command[3] if len(message.command) > 3 else None
-        result = await get_by_id(type, id, season, episode)
+        result = await get_by_id(tmdb_type, tmdb_id, season, episode)
         poster_url = result.get('poster_url')
         trailer = result.get('trailer_url')
         info = result.get('message')
