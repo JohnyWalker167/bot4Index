@@ -495,6 +495,22 @@ async def tmdb_command(client, message):
         trailer = result.get('trailer_url')
         info = result.get('message')
 
+        season_info = {}
+        if season is not None:
+            season_info["season"] = int(season)
+        if episode is not None:
+            season_info["episode"] = int(episode)
+        update = {
+            "$setOnInsert": {"tmdb_id": tmdb_id, "tmdb_type": tmdb_type}
+        }
+        if season_info:
+            update["$addToSet"] = {"season_info": season_info}
+        tmdb_col.update_one(
+            {"tmdb_id": tmdb_id, "tmdb_type": tmdb_type},
+            update,
+            upsert=True
+        )
+        
         if poster_url:
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
             await safe_api_call(
