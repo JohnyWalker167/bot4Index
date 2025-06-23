@@ -361,6 +361,10 @@ async def imgbb_upload_reply_url_handler(client, message):
             studio = parts[0]
             star_and_scene = parts[1]
             formatted_output = f"🎥 {studio}\n🌟 {star_and_scene}"
+            # Remove all dots from the formatted_output
+            formatted_output = formatted_output.replace('.', '')
+        else:
+            formatted_output = caption.replace('.', '')
 
         try:
             pic = await imgbb_client.upload(url=image_url)
