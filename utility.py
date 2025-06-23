@@ -221,7 +221,7 @@ async def restore_tmdb_photos(bot):
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
     cursor = tmdb_col.find({})
-    async for doc in cursor if hasattr(cursor, "__aiter__") else cursor:
+    for doc in cursor:
         tmdb_id = doc.get("tmdb_id")
         tmdb_type = doc.get("tmdb_type")
         season_infos = doc.get("season_info", [])
@@ -258,7 +258,7 @@ async def restore_imgbb_photos(bot):
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
     cursor = tmdb_col.find({})
-    async for doc in cursor if hasattr(cursor, "__aiter__") else cursor:
+    for doc in cursor:
         pic_url = doc.get("pic_url")
         caption = doc.get("caption")
 
