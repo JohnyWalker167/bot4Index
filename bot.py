@@ -325,19 +325,20 @@ async def update_info(client, message):
     try:
         args = message.text.split()
         if len(args) < 2:
-            await message.reply_text("Usage: /restore tmdb|imgbb ")
+            await message.reply_text("Usage: /restore tmdb|imgbb [start_index]")
             return
         restore_type = args[1].strip()
+        start_idx = int(args[2]) if len(args) > 2 and args[2].isdigit() else 0
         if restore_type == "tmdb":
-            await restore_tmdb_photos(bot)
+            await restore_tmdb_photos(bot, start_idx)
         elif restore_type == "imgbb":
-            await restore_imgbb_photos(bot)
+            await restore_imgbb_photos(bot, start_idx)
         else:
             await message.reply_text("Invalid restore type. Use 'tmdb' or 'imgbb'.")
             return
     except Exception as e:
         await message.reply_text(f"Error in Update Command: {e}")
-
+        
 @bot.on_message(filters.command("imgbb") & filters.private & filters.reply & filters.user(OWNER_ID))
 async def imgbb_upload_reply_url_handler(client, message):
     # User replies to a message containing the URL and sends: /imgbb <caption>
