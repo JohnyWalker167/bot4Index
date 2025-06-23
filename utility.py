@@ -22,7 +22,8 @@ from db import (
     tokens_col,
     auth_users_col,
     files_col,
-    tmdb_col
+    tmdb_col,
+    imgbb_col
 )
 from config import *
 from tmdb import get_movie_by_name, get_tv_by_name, get_by_id
@@ -258,7 +259,7 @@ async def restore_imgbb_photos(bot):
     Restore all TMDB poster photos from the database.
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
-    cursor = tmdb_col.find({})
+    cursor = imgbb_col.find({})
     docs = list(cursor)
     for doc in docs:
         pic_url = doc.get("pic_url")
