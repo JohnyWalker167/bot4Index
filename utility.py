@@ -5,6 +5,7 @@ import base64
 import uuid
 import time
 import requests
+from bson import ObjectId
 from datetime import datetime, timezone, timedelta
 from pyrogram.errors import FloodWait
 from pyrogram import enums
@@ -221,7 +222,10 @@ async def restore_tmdb_photos(bot, start_idx=0):
     Restore all TMDB poster photos from the database.
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
-    cursor = tmdb_col.find({}).skip(start_idx)
+    query = {}
+    if start_id is not None:
+        query['_id'] = {'$gt': ObjectId(start_id)}
+    cursor = tmdb_col.find(query).sort('_id', 1)
     docs = list(cursor)
     for doc in docs:
         tmdb_id = doc.get("tmdb_id")
@@ -235,47 +239,57 @@ async def restore_tmdb_photos(bot, start_idx=0):
             season_episode_list = [(s.get("season"), s.get("episode")) for s in season_infos]
 
         for season, episode in season_episode_list:
-            results = await get_by_id(tmdb_type, tmdb_id, season, episode)
-            poster_url = results.get('poster_url')
-            trailer = results.get('trailer_url')
-            info = results.get('message')
-            if poster_url:
-                keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
-                await asyncio.sleep(3) 
-                # Avoid hitting API limits
-                await safe_api_call(
-                    bot.send_photo(
-                        UPDATE_CHANNEL_ID,
-                        photo=poster_url,
-                        caption=info,
-                        parse_mode=enums.ParseMode.HTML,
-                        reply_markup=keyboard
+            try:
+                results = await get_by_id(tmdb_type, tmdb_id, season, episode)
+                poster_url = results.get('poster_url')
+                trailer = results.get('trailer_url')
+                info = results.get('message')
+                if poster_url:
+                    keyboard = InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("🎥 Trailer", url=trailer)]]) if trailer else None
+                    await asyncio.sleep(3) 
+                    # Avoid hitting API limits
+                    await safe_api_call(
+                        bot.send_photo(
+                            UPDATE_CHANNEL_ID,
+                            photo=poster_url,
+                            caption=info,
+                            parse_mode=enums.ParseMode.HTML,
+                            reply_markup=keyboard
+                        )
                     )
-                )
+            except Exception as e:
+                logger.error(f"Error in restore_tmdb_photos for tmdb_id={tmdb_id}, season={season}, episode={episode}: {e}")
+                continue  # Continue to the next (season, episode) or doc
 
 async def restore_imgbb_photos(bot, start_idx=0):
     """
     Restore all TMDB poster photos from the database.
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
-    cursor = imgbb_col.find({}).skip(start_idx)
+    query = {}
+    if start_id is not None:
+        query['_id'] = {'$gt': ObjectId(start_id)}
+    cursor = tmdb_col.find(query).sort('_id', 1)
     docs = list(cursor)
     for doc in docs:
         pic_url = doc.get("pic_url")
         caption = doc.get("caption")
-
-        await asyncio.sleep(3) 
-        # Avoid hitting API limits
-        if pic_url:
-            await safe_api_call(
-                bot.send_photo( 
-                    UPDATE_CHANNEL_ID,
-                    photo=pic_url,
-                    caption=caption,
-                    parse_mode=enums.ParseMode.HTML,
+        try:
+            await asyncio.sleep(3) 
+            # Avoid hitting API limits
+            if pic_url:
+                await safe_api_call(
+                    bot.send_photo( 
+                        UPDATE_CHANNEL_ID,
+                        photo=pic_url,
+                        caption=caption,
+                        parse_mode=enums.ParseMode.HTML,
+                    )
                 )
-            )
+        except Exception as e:
+            logger.error(f"Error in restore_imgbb_photos for pic_url={pic_url}: {e}")
+            continue
 
 
 def extract_file_info(message, channel_id=None):
