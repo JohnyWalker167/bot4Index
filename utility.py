@@ -270,7 +270,7 @@ async def restore_imgbb_photos(bot, start_id=None):
     query = {}
     if start_id:
         query['_id'] = {'$gt': start_id}
-    cursor = tmdb_col.find(query).sort('_id', 1)
+    cursor = imgbb_col.find(query).sort('_id', 1)
     docs = list(cursor)
     for doc in docs:
         pic_url = doc.get("pic_url")
