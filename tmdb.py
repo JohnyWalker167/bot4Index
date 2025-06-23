@@ -61,18 +61,17 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
             release_date_fmt = release_date
 
         message = (
-            f"<b>🎬 Name:</b> {title}\n"
+            f"<b>🎬Name:</b> {title}\n"
         )
-        message += f"<b>⭐ Rating:</b> {vote_average_str}/10\n" if vote_average_str is not None else ""
-        message += f"<b>⏱️ Length:</b> {duration}\n" if duration else ""
-        message += f"<b>🌐 Language:</b> {language}\n" if language else ""
-        message += f"<b>🏷️ Genres:</b> {genre_tags}\n" if genre_tags else ""
-        message += f"<b>📅 Released:</b> {release_date_fmt}\n" if release_date_fmt else ""
+        message += f"<b>⭐Rating:</b> {vote_average_str}/10\n" if vote_average_str is not None else ""
+        message += f"<b>⏳Length:</b> {duration}\n" if duration else ""
+        message += f"<b>🅰️Language:</b> {language}\n" if language else ""
+        message += f"<b>⚙️Genres:</b> {genre_tags}\n" if genre_tags else ""
+        message += f"<b>📅Released:</b> {release_date_fmt}\n" if release_date_fmt else ""
         message += "\n"
-        message += f"<b>📝 Plot:</b> {plot}\n" if plot else ""
-        message += "\n"
-        message += f"<b>🎬 Director:</b> {director}\n" if director else ""
-        message += f"<b>⭐ Cast:</b> {starring}\n" if starring else ""
+        message += f"<b>📝Plot:</b> {plot}\n" if plot else ""
+        message += f"<b>🎥Director:</b> {director}\n" if director else ""
+        message += f"<b>⭐Cast:</b> {starring}\n" if starring else ""
 
         return message.strip()
 
@@ -101,19 +100,18 @@ def format_tmdb_info(tmdb_type, movie_id, data, season, episode):
             release_date_fmt = release_date
 
         message = (
-            f"<b>🎬 Name:</b> {title}\n"
-            f"<b>📺 Season:</b> S{season}\n" if season else ""
-            f"<b>📺 Episode:</b> E{episode}\n" if episode else ""
+            f"<b>🎬Name:</b> {title}\n"
+            f"<b>📺Season:</b> S{season}\n" if season else ""
+            f"<b>📺Episode:</b> E{episode}\n" if episode else ""
         )
-        message += f"<b>⭐ Rating:</b> {vote_average_str}/10\n" if vote_average_str is not None else ""
-        message += f"<b>🌐 Language:</b> {language}\n" if language else ""
-        message += f"<b>🏷️ Genres:</b> {genre_tags}\n" if genre_tags else ""
-        message += f"<b>📅 Released:</b> {release_date_fmt}\n" if release_date_fmt else ""
+        message += f"<b>⭐Rating:</b> {vote_average_str}/10\n" if vote_average_str is not None else ""
+        message += f"<b>🅰️Language:</b> {language}\n" if language else ""
+        message += f"<b>⚙️Genres:</b> {genre_tags}\n" if genre_tags else ""
+        message += f"<b>📅Released:</b> {release_date_fmt}\n" if release_date_fmt else ""
         message += "\n"
-        message += f"<b>📝 Plot:</b> {plot}\n" if plot else ""
-        message += "\n"
-        message += f"<b>🎬 Director:</b> {director}\n" if director else ""
-        message += f"<b>⭐ Cast:</b> {starring}\n" if starring else ""
+        message += f"<b>📝Plot:</b> {plot}\n" if plot else ""
+        message += f"<b>🎥Director:</b> {director}\n" if director else ""
+        message += f"<b>⭐Cast:</b> {starring}\n" if starring else ""
 
         return message.strip()
     else:
@@ -128,12 +126,19 @@ def get_tv_imdb_id_sync(tv_id):
 
 async def get_by_id(tmdb_type, tmdb_id, season=None, episode=None):
     api_url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US"
+    image_url = f'https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}/images?api_key={TMDB_API_KEY}&language=en-US&include_image_language=en'
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(api_url) as detail_response:
                 data = await detail_response.json()
+                async with session.get(image_url) as movie_response:
+                    images = await movie_response.json()
                 message = format_tmdb_info(tmdb_type, tmdb_id, data, season, episode)
                 poster_path = data.get('poster_path', None)
+                if 'backdrops' in images and images['backdrops']:
+                    poster_path = images['backdrops'][0]['file_path']
+                elif 'posters' in images and images['posters']:
+                    poster_path = images['posters'][0]['file_path']
                 poster_url = f"https://image.tmdb.org/t/p/original{poster_path}" if poster_path else None
 
                 video_url = f'https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}/videos?api_key={TMDB_API_KEY}'
