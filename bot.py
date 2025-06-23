@@ -356,6 +356,7 @@ async def imgbb_upload_reply_url_handler(client, message):
         image_url = message.reply_to_message.text.strip()
         caption = message.text.split(maxsplit=1)[1] if len(message.text.split(maxsplit=1)) > 1 else ""
         imgbb_client = imgbbpy.AsyncClient(IMGBB_API_KEY)
+        caption = caption.replace('.',' ')
         parts = caption.strip().split(' ', 1)
         if len(parts) == 2:
             studio = parts[0]
