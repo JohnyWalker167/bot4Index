@@ -7,6 +7,7 @@ import base64
 import os
 import re
 import sys
+from bson import ObjectId
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -325,17 +326,22 @@ async def update_info(client, message):
     try:
         args = message.text.split()
         if len(args) < 2:
-            await message.reply_text("Usage: /restore tmdb|imgbb [start_index]")
+            await message.reply_text("Usage: /restore tmdb|imgbb [start_objectid]")
             return
         restore_type = args[1].strip()
-        start_idx = int(args[2]) if len(args) > 2 and args[2].isdigit() else 0
+        start_id = args[2] if len(args) > 2 else None
+        if start_id:
+            try:
+                start_id = ObjectId(start_id)
+            except Exception:
+                await message.reply_text("Invalid ObjectId format for start_id.")
+                return
         if restore_type == "tmdb":
-            await restore_tmdb_photos(bot, start_idx)
+            await restore_tmdb_photos(bot, start_id)
         elif restore_type == "imgbb":
-            await restore_imgbb_photos(bot, start_idx)
+            await restore_imgbb_photos(bot, start_id)
         else:
             await message.reply_text("Invalid restore type. Use 'tmdb' or 'imgbb'.")
-            return
     except Exception as e:
         await message.reply_text(f"Error in Update Command: {e}")
         
