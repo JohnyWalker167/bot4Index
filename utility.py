@@ -216,12 +216,12 @@ def upsert_tmdb_info(tmdb_id, tmdb_type, season=None, episode=None):
         upsert=True
     )
 
-async def restore_tmdb_photos(bot):
+async def restore_tmdb_photos(bot, start_idx=0):
     """
     Restore all TMDB poster photos from the database.
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
-    cursor = tmdb_col.find({})
+    cursor = tmdb_col.find({}).skip(start_idx)
     docs = list(cursor)
     for doc in docs:
         tmdb_id = doc.get("tmdb_id")
@@ -254,12 +254,12 @@ async def restore_tmdb_photos(bot):
                     )
                 )
 
-async def restore_imgbb_photos(bot):
+async def restore_imgbb_photos(bot, start_idx=0):
     """
     Restore all TMDB poster photos from the database.
     For each tmdb entry, fetch details and send the poster to UPDATE_CHANNEL_ID.
     """
-    cursor = imgbb_col.find({})
+    cursor = imgbb_col.find({}).skip(start_idx)
     docs = list(cursor)
     for doc in docs:
         pic_url = doc.get("pic_url")
