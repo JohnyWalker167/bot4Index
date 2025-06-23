@@ -494,7 +494,7 @@ async def tmdb_command(client, message):
             return
 
         tmdb_link = message.command[1]
-        type, id = await extract_tmdb_link(tmdb_link)
+        tmdb_type, tmdb_id = await extract_tmdb_link(tmdb_link)
         season = message.command[2] if len(message.command) > 2 else None
         episode = message.command[3] if len(message.command) > 3 else None
         result = await get_by_id(type, id, season, episode)
