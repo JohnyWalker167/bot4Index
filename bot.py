@@ -592,9 +592,9 @@ async def search_files_handler(client, message):
 
 async def send_search_results(client, message_or_callback, query, page, as_callback=False, channel_id=None):
     # Try cache first
+    skip = page * SEARCH_PAGE_SIZE
     files, total_files = get_cached_search(query, page, channel_id)
     if files is None:
-        skip = page * SEARCH_PAGE_SIZE
         search_filter = {}
         if channel_id is not None:
             search_filter["channel_id"] = channel_id
