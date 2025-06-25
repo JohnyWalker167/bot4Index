@@ -362,7 +362,7 @@ async def imgbb_upload_reply_url_handler(client, message):
             studio = parts[0]
             star_and_scene = parts[1]
         try:
-            pic = await imgbb_client.upload(url=image_url)
+            pic = await imgbb_client.upload(url=image_url, name=f"img{message.id}")
             pic_doc = {
                 "pic_url": pic.url,
                 "caption": caption,
