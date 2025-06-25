@@ -361,7 +361,7 @@ async def imgbb_upload_reply_url_handler(client, message):
         if len(parts) == 2:
             studio = parts[0]
             star_and_scene = parts[1]
-            formatted_output = f"🎥 {studio}\n🌟 {star_and_scene}"
+            formatted_output = f"🎥 {studio}\n🌟 <a href=\"{pic.url}\">{star_and_scene}</a>"
 
         try:
             pic = await imgbb_client.upload(url=image_url)
