@@ -731,7 +731,7 @@ async def browse_channel_callback(client, callback_query: CallbackQuery):
     for f in files:
         file_link = encode_file_link(f["channel_id"], f["message_id"])
         size_str = human_readable_size(f.get('file_size', 0))
-        btn_text = f"({size_str}) • {f.get('file_name')}"
+        btn_text = f"{f.get('file_name')}"
         buttons.append([
             InlineKeyboardButton(btn_text, url=f"https://t.me/{BOT_USERNAME}?start=file_{file_link}")
         ])
