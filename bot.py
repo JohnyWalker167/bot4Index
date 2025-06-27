@@ -638,7 +638,7 @@ async def send_search_results(client, message_or_callback, query, page, as_callb
         score_str = ""
         if "score" in f:
             score_str = f" [score: {f['score']:.2f}]"
-        btn_text = f"({size_str}) • {f.get('file_name')}{score_str} [{channel_name}]"
+        btn_text = f"{f.get('file_name')}"
         buttons.append([
             InlineKeyboardButton(btn_text, url=f"https://t.me/{BOT_USERNAME}?start=file_{file_link}")
         ])
